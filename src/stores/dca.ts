@@ -58,7 +58,7 @@ export const useDcaStore = defineStore('dca', () => {
     await recompute()
   }
 
-  async function syncIndex(symbol: string = DEFAULT_SYMBOL): Promise<{ ok: boolean; error?: string }> {
+  async function syncIndex(_symbol: string = DEFAULT_SYMBOL): Promise<{ ok: boolean; error?: string }> {
     syncError.value = null
     // 1. 尝试实时拉取 (Yahoo via 代理链; 浏览器里常失败)
     let bars = await fetchLiveQuotes()
