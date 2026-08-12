@@ -51,3 +51,13 @@ export function openDb(): Promise<IDBPDatabase<FuncDB>> {
 export function resetDbForTests(): void {
   // 保留 API 兼容; 当前无缓存
 }
+
+/** 删除整个数据库 (忘记密码时的紧急重置) */
+export function wipeAllData(): Promise<void> {
+  return new Promise((resolve) => {
+    const req = indexedDB.deleteDatabase(DB_NAME)
+    req.onsuccess = () => resolve()
+    req.onerror = () => resolve()
+    req.onblocked = () => resolve()
+  })
+}

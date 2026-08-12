@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, computed } from 'vue'
 import { RouterView } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
+import { useLockStore } from '@/stores/lock'
+import LockScreen from '@/components/LockScreen.vue'
 
 const settings = useSettingsStore()
+const lock = useLockStore()
+
+const locked = computed(() => lock.hasPassword && !lock.unlocked)
 
 onMounted(async () => {
   if (!settings.loaded) await settings.load()
@@ -19,5 +24,6 @@ function applyTheme() {
 </script>
 
 <template>
-  <RouterView />
+  <LockScreen v-if="locked" />
+  <RouterView v-else />
 </template>

@@ -12,6 +12,8 @@ const DEFAULTS: AppSettings = {
   permanentThreshold: 5,
   lastIndexSync: {},
   schemaVersion: 1,
+  passHash: null,
+  passSalt: null,
   updatedAt: Date.now()
 }
 

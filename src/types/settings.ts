@@ -11,6 +11,8 @@ export interface AppSettings {
   permanentThreshold: number
   lastIndexSync: { qqq?: number }
   schemaVersion: number
+  passHash?: string | null   // 应用锁密码哈希 (SHA-256 + 盐)
+  passSalt?: string | null   // 应用锁盐
   updatedAt?: number
 }
 

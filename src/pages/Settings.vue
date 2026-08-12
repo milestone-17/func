@@ -18,6 +18,9 @@
         </div>
       </section>
 
+      <!-- 应用锁 -->
+      <AppLockSettings />
+
       <!-- 财务参数 -->
       <section class="card card-pad space-y-3">
         <span class="section-title">财务参数</span>
@@ -70,6 +73,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import AppShell from '@/components/AppShell.vue'
+import AppLockSettings from '@/components/AppLockSettings.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { downloadBackup, importAll, isValidBundle } from '@/lib/backup'
 import type { Theme } from '@/types/settings'
