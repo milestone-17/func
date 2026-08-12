@@ -1,18 +1,18 @@
 <template>
   <div class="amount-input">
-    <label v-if="label" class="block text-sm text-gray-600 mb-1">{{ label }}</label>
-    <div class="flex items-center gap-2">
-      <span class="text-gray-500">¥</span>
+    <label v-if="label" class="label">{{ label }}</label>
+    <div class="flex items-center gap-1 rounded-xl border border-line bg-surface px-3 transition focus-within:ring-2 focus-within:ring-brand/25 focus-within:border-brand/60">
+      <span class="text-ink3 font-medium">¥</span>
       <input
         :value="displayValue"
         @input="onInput"
         type="text"
         inputmode="decimal"
         :placeholder="placeholder || '0.00'"
-        class="flex-1 px-3 py-2 border rounded-lg text-right text-lg font-mono"
+        class="money w-full min-w-0 flex-1 py-2 text-right text-lg font-semibold bg-transparent text-ink placeholder:text-ink3 focus:outline-none"
       />
     </div>
-    <div v-if="error" class="text-red-500 text-xs mt-1">{{ error }}</div>
+    <div v-if="error" class="mt-1 text-xs text-neg">{{ error }}</div>
   </div>
 </template>
 

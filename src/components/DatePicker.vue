@@ -5,7 +5,7 @@
     type="date"
     :max="max"
     :min="min"
-    class="px-3 py-2 border rounded-lg"
+    class="input !w-auto !py-1.5 !text-sm"
   />
 </template>
 

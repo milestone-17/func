@@ -1,12 +1,12 @@
 <template>
   <transition name="fade">
-    <div v-if="modelValue" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" @click.self="onCancel">
-      <div class="bg-white rounded-lg p-5 max-w-sm w-full">
-        <h3 class="text-lg font-semibold mb-2">{{ title }}</h3>
-        <p v-if="message" class="text-gray-600 mb-4 whitespace-pre-line">{{ message }}</p>
+    <div v-if="modelValue" class="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4" @click.self="onCancel">
+      <div class="card w-full max-w-sm p-5 shadow-float">
+        <h3 class="text-base font-semibold text-ink mb-1.5">{{ title }}</h3>
+        <p v-if="message" class="text-sm text-ink2 mb-4 whitespace-pre-line">{{ message }}</p>
         <div class="flex gap-2 justify-end">
-          <button class="px-4 py-2 text-gray-600" @click="onCancel">{{ cancelText || '取消' }}</button>
-          <button class="px-4 py-2 bg-red-500 text-white rounded-lg" @click="onConfirm">{{ confirmText || '确认' }}</button>
+          <button class="btn-ghost" @click="onCancel">{{ cancelText || '取消' }}</button>
+          <button class="btn-danger" @click="onConfirm">{{ confirmText || '确认' }}</button>
         </div>
       </div>
     </div>

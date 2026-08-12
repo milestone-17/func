@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --canvas: 246 247 249;      /* 页面底色 浅灰 */
+    --surface: 255 255 255;     /* 卡片表面 */
+    --surface2: 243 244 246;    /* 次级表面 (内嵌区/凹槽) */
+    --ink: 17 24 39;            /* 主文字 */
+    --ink2: 107 114 128;        /* 次级文字 */
+    --ink3: 156 163 175;        /* 弱文字/占位 */
+    --line: 229 231 235;        /* 分隔线 */
+    --pos: 22 163 74;           /* 收益/收入 绿 */
+    --neg: 225 29 72;           /* 亏损/支出 红 (rose-600) */
+    --warn: 217 119 6;          /* 警示 琥珀 */
+    --brand: 16 185 129;        /* 品牌 emerald-500 */
+    --brand-soft: 209 250 229;  /* 品牌浅底 emerald-100 */
+    --brand-50: 236 253 245;    /* emerald-50 */
+    --brand-600: 5 150 105;     /* emerald-600 */
+    --brand-700: 4 120 87;      /* emerald-700 */
+    color-scheme: light;
+  }
+  .dark {
+    --canvas: 13 17 26;         /* slate-950 偏蓝深底 */
+    --surface: 26 32 44;        /* 深色卡片 */
+    --surface2: 37 45 60;       /* 深色内嵌区 */
+    --ink: 235 240 246;
+    --ink2: 148 163 184;
+    --ink3: 100 116 139;
+    --line: 45 55 70;
+    --pos: 52 211 153;          /* emerald-400 亮绿 */
+    --neg: 251 113 133;         /* rose-400 亮红 */
+    --warn: 251 191 36;
+    --brand: 52 211 153;        /* emerald-400 */
+    --brand-soft: 4 55 40;      /* 深绿浅底 */
+    --brand-50: 4 55 40;
+    --brand-600: 16 185 129;
+    --brand-700: 52 211 153;
+    color-scheme: dark;
+  }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    @apply bg-canvas text-ink antialiased;
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC',
+      'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  }
+
+  /* 数字用等宽数字字形, 金额对得齐 */
+  .money { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
+
+  /* 隐藏滚动条但保留滚动能力 (iOS 手感) */
+  ::-webkit-scrollbar { width: 0; height: 0; }
+
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type='number'] { -moz-appearance: textfield; }
+}
+
+@layer components {
+  /* ---- 卡片 ---- */
+  .card {
+    @apply bg-surface border border-line rounded-2xl shadow-card;
+  }
+  .card-pad { @apply p-4; }
+
+  /* ---- 按钮 ---- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium
+      transition-all select-none active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none
+      focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40;
+  }
+  .btn-primary { @apply btn bg-brand text-white shadow-sm hover:brightness-105; }
+  .btn-ghost  { @apply btn border border-line bg-surface text-ink2 hover:bg-surface2 hover:text-ink; }
+  .btn-danger { @apply btn bg-neg text-white hover:brightness-105; }
+
+  /* ---- 输入 ---- */
+  .input {
+    @apply w-full rounded-xl border border-line bg-surface px-3 py-2 text-ink
+      placeholder:text-ink3 transition focus:outline-none focus:ring-2 focus:ring-brand/25
+      focus:border-brand/60;
+  }
+  .label { @apply block text-xs font-medium text-ink2 mb-1; }
+
+  /* ---- 分区标题 ---- */
+  .section-title { @apply text-sm font-semibold text-ink2 flex items-center gap-2; }
+
+  /* ---- 弹出层容器 (底部抽屉) ---- */
+  .sheet {
+    @apply fixed inset-0 z-50 bg-black/45 flex items-end justify-center;
+    backdrop-filter: blur(2px);
+  }
+  .sheet-panel {
+    @apply w-full max-w-md bg-surface rounded-t-3xl px-5 pt-5 pb-8
+      shadow-float animate-[sheet-up_0.22s_cubic-bezier(.2,.8,.3,1)];
+  }
+}
+
+/* 底部抽屉滑入动画 */
+@keyframes sheet-up {
+  from { transform: translateY(40px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fade-in 0.28s ease-out both; }
