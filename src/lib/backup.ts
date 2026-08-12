@@ -6,6 +6,7 @@
  */
 import { openDB } from 'idb'
 import type { MetaEntry } from '@/types/settings'
+import { settingsRepo } from '@/repos/settingsRepo'
 
 const DB_NAME = 'func-db'
 const SCHEMA_VERSION = 1
@@ -103,6 +104,8 @@ export function downloadBackup(): void {
     a.click()
     document.body.removeChild(a)
     setTimeout(() => URL.revokeObjectURL(url), 1000)
+    // 成功导出后记录最近备份时间 (消除备份提醒)
+    settingsRepo.save({ lastBackupAt: Date.now() }).catch(() => { /* 忽略 */ })
   })
 }
 

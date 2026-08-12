@@ -1,6 +1,23 @@
 <template>
   <AppShell>
     <div class="space-y-4">
+      <!-- 备份提醒 -->
+      <section v-if="showBackupReminder" class="card card-pad border-warn/40 bg-warn/5 fade-in">
+        <div class="flex items-start gap-3">
+          <span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-warn/15 text-warn">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </span>
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-ink">该备份你的数据了</div>
+            <p class="mt-0.5 text-xs text-ink2">数据仅存本地,建议定期导出备份到网盘以防丢失。</p>
+            <div class="mt-2 flex gap-2">
+              <button @click="goBackup" class="btn-primary !py-1.5 !text-xs">立即备份</button>
+              <button @click="snoozeReminder" class="btn-ghost !py-1.5 !text-xs">稍后提醒</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Hero: 净资产 -->
       <section class="card card-pad bg-gradient-to-br from-brand to-emerald-700 text-white border-0 shadow-float">
         <div class="flex items-center justify-between">
@@ -73,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import AppShell from '@/components/AppShell.vue'
 import StatCard from '@/components/StatCard.vue'
@@ -85,6 +102,7 @@ import { usePortfolioStore } from '@/stores/portfolio'
 import { useDcaStore } from '@/stores/dca'
 import { useSettingsStore } from '@/stores/settings'
 import { formatYuan } from '@/lib/money'
+import { shouldRemindBackup } from '@/lib/backupReminder'
 
 const ledger = useLedgerStore()
 const portfolio = usePortfolioStore()
@@ -98,6 +116,30 @@ onMounted(async () => {
 })
 
 function go(to: string) { router.push(to) }
+
+// ---- 备份提醒 ----
+const reminderSnoozedLocal = ref(false)
+const firstDataAt = computed(() => {
+  const ts = ledger.transactions.map(t => t.createdAt).filter(Number.isFinite)
+  return ts.length ? Math.min(...ts) : null
+})
+const showBackupReminder = computed(() => {
+  if (reminderSnoozedLocal.value) return false
+  const s = settings.settings
+  if (!s) return false
+  return shouldRemindBackup({
+    lastBackupAt: s.lastBackupAt,
+    firstDataAt: firstDataAt.value,
+    snoozedAt: s.backupReminderSnoozedAt,
+    reminderDays: s.backupReminderDays,
+    now: Date.now()
+  })
+})
+function goBackup() { router.push('/settings') }
+async function snoozeReminder() {
+  reminderSnoozedLocal.value = true
+  await settings.save({ backupReminderSnoozedAt: Date.now() })
+}
 
 // 本月
 const currentMonth = computed(() => {

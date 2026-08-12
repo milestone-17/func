@@ -34,11 +34,25 @@
           <input :value="settings.settings?.permanentThreshold" @change="onThreshold" type="number" step="1" class="input money" />
           <p class="mt-1 text-[11px] text-ink3">偏离目标超过此值时提醒再平衡</p>
         </div>
+        <div>
+          <label class="label">备份提醒阈值 (天)</label>
+          <input :value="settings.settings?.backupReminderDays ?? 30" @change="onReminderDays" type="number" min="7" max="180" step="1" class="input money" />
+          <p class="mt-1 text-[11px] text-ink3">超过这么多天未备份,总览页会提醒你 (7–180)</p>
+        </div>
       </section>
 
       <!-- 数据 -->
       <section class="card card-pad space-y-2">
         <span class="section-title mb-1">数据管理</span>
+        <!-- 持久化状态 -->
+        <div class="flex items-center justify-between rounded-xl bg-surface2 px-3 py-2 text-xs">
+          <span class="text-ink2">持久化存储</span>
+          <Badge :tone="persistTone">{{ persistLabel }}</Badge>
+        </div>
+        <div class="flex items-center justify-between rounded-xl bg-surface2 px-3 py-2 text-xs">
+          <span class="text-ink2">最近备份</span>
+          <span class="money text-ink">{{ lastBackupLabel }}</span>
+        </div>
         <button @click="onExport" class="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition hover:bg-surface2">
           <span class="flex items-center gap-2 text-ink">
             <svg class="h-4 w-4 text-ink2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -71,9 +85,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import AppLockSettings from '@/components/AppLockSettings.vue'
+import Badge from '@/components/Badge.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { downloadBackup, importAll, isValidBundle } from '@/lib/backup'
 import type { Theme } from '@/types/settings'
@@ -108,8 +123,34 @@ async function onThreshold(e: Event) {
   const v = Number((e.target as HTMLInputElement).value)
   if (Number.isFinite(v) && v > 0) await settings.save({ permanentThreshold: v })
 }
+async function onReminderDays(e: Event) {
+  let v = Number((e.target as HTMLInputElement).value)
+  if (!Number.isFinite(v)) return
+  v = Math.max(7, Math.min(180, Math.round(v)))
+  await settings.save({ backupReminderDays: v })
+}
 
-function onExport() { downloadBackup() }
+// 持久化状态
+const persistLabel = computed(() => {
+  const p = settings.settings?.storagePersisted
+  if (p === true) return '已开启'
+  if (p === false) return '未开启'
+  return '不支持'
+})
+const persistTone = computed<'green' | 'amber' | 'gray'>(() => {
+  const p = settings.settings?.storagePersisted
+  if (p === true) return 'green'
+  if (p === false) return 'amber'
+  return 'gray'
+})
+const lastBackupLabel = computed(() => {
+  const t = settings.settings?.lastBackupAt
+  if (!t) return '从未备份'
+  try { return new Date(t).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }) }
+  catch { return '—' }
+})
+
+function onExport() { downloadBackup(); setTimeout(() => settings.load(), 600) }
 
 async function onImport(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]

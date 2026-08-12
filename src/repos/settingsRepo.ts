@@ -14,6 +14,10 @@ const DEFAULTS: AppSettings = {
   schemaVersion: 1,
   passHash: null,
   passSalt: null,
+  lastBackupAt: null,
+  backupReminderDays: 30,
+  backupReminderSnoozedAt: null,
+  storagePersisted: null,
   updatedAt: Date.now()
 }
 

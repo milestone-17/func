@@ -137,6 +137,9 @@ def run_tests():
             page.locator("button:has-text('浅色')").click()
             page.wait_for_timeout(300)
             ok("设置-应用锁区块", page.locator("text=应用锁").count() > 0)
+            ok("设置-持久化状态显示", page.locator("text=持久化存储").count() > 0)
+            ok("设置-最近备份显示", page.locator("text=最近备份").count() > 0)
+            ok("设置-备份提醒阈值", page.locator("text=备份提醒阈值").count() > 0)
             if page.locator("button:has-text('开启应用锁')").count() > 0:
                 page.locator("button:has-text('开启应用锁')").click()
                 page.wait_for_timeout(400)
