@@ -10,7 +10,7 @@ import { computeWeekSuggestion, type SuggestionResult } from '@/lib/dca'
 import { lookupBucket } from '@/lib/table'
 import type { DCAConfig, IndexData, BucketResult } from '@/types/dca'
 
-const DEFAULT_SYMBOL = 'QQQ.US'
+const DEFAULT_SYMBOL = '^NDX'
 
 export const useDcaStore = defineStore('dca', () => {
   const config = ref<DCAConfig | null>(null)
@@ -76,7 +76,7 @@ export const useDcaStore = defineStore('dca', () => {
       return { ok: false, error: syncError.value }
     }
     for (const r of barsToIndexData(bars, source)) await indexDataRepo.put(r)
-    series.value = await indexDataRepo.listBySymbol(symbol)
+    series.value = await indexDataRepo.listBySymbol(DEFAULT_SYMBOL)
     lastSyncAt.value = new Date().toISOString()
     dataSource.value = source
     await recompute()

@@ -28,7 +28,7 @@ jobs:
           cache: 'npm'
       - run: npm ci || npm install
       - run: node scripts/gen-icons.cjs
-      - run: node scripts/fetch-qqq.cjs
+      - run: node scripts/fetch-nasdaq.cjs
       - run: npm run test -- --run
       - run: npm run build
       - uses: actions/configure-pages@v4

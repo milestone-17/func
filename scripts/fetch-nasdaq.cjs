@@ -1,25 +1,23 @@
 #!/usr/bin/env node
 /**
- * 抓取纳斯达克100 (QQQ) 近 2 年日线收盘价, 写入 public/qqq-data.json
+ * 抓取纳斯达克100官方指数 (NDX) 近 2 年日线收盘价, 写入 public/nasdaq-data.json
  *
- * 为什么需要这个: 浏览器直接拉 Yahoo/Stooq 会被 CORS 拦截。
+ * 为什么需要这个: 浏览器直接拉 Yahoo 会被 CORS 拦截。
  * 本脚本在构建时(服务端/CI, 无 CORS 限制)运行, 把数据打包进站点,
  * App 同源读取 → 永远不会跨域失败。
  *
- * 数据源: Yahoo Finance chart API (无需 key)
- *   https://query1.finance.yahoo.com/v8/finance/chart/QQQ?range=2y&interval=1d
+ * 数据源: Yahoo Finance chart API (^NDX = NASDAQ-100 官方指数)
+ *   https://query1.finance.yahoo.com/v8/finance/chart/%5ENDX?range=2y&interval=1d
  *
  * 失败安全: 抓取失败时保留已有文件 (不阻断构建)。
  */
 const fs = require('fs')
 const path = require('path')
 
-const SYMBOL = 'QQQ'
-const OUT = path.join(__dirname, '..', 'public', 'qqq-data.json')
-const YAHOO = 'https://query1.finance.yahoo.com/v8/finance/chart/QQQ?range=2y&interval=1d'
+const OUT = path.join(__dirname, '..', 'public', 'nasdaq-data.json')
+const YAHOO = 'https://query1.finance.yahoo.com/v8/finance/chart/%5ENDX?range=2y&interval=1d'
 
 function tsToDate(ts) {
-  // Yahoo 时间戳是秒级, 对应交易所时区收盘日; 用 UTC 日期即可
   const d = new Date(ts * 1000)
   const y = d.getUTCFullYear()
   const m = String(d.getUTCMonth() + 1).padStart(2, '0')
@@ -28,7 +26,7 @@ function tsToDate(ts) {
 }
 
 async function main() {
-  console.log(`[fetch-qqq] 抓取 ${SYMBOL} 近 2 年日线...`)
+  console.log('[fetch-nasdaq] 抓取 NDX (纳斯达克100指数) 近 2 年日线...')
   const res = await fetch(YAHOO, {
     headers: { 'User-Agent': 'Mozilla/5.0 (local-finance-fetch)' }
   })
@@ -43,12 +41,13 @@ async function main() {
   for (let i = 0; i < ts.length; i++) {
     const c = closes[i]
     if (c == null || Number.isNaN(c)) continue
-    bars.push({ date: tsToDate(ts[i]), close: Math.round(c * 10000) / 10000 })
+    bars.push({ date: tsToDate(ts[i]), close: Math.round(c * 100) / 100 })
   }
   if (bars.length < 250) throw new Error(`数据不足: 仅 ${bars.length} 条, 需 ≥250`)
 
   const out = {
-    symbol: 'QQQ.US',
+    symbol: 'NDX',
+    name: '纳斯达克100指数',
     fetchedAt: Date.now(),
     source: 'yahoo',
     count: bars.length,
@@ -56,10 +55,9 @@ async function main() {
   }
   fs.mkdirSync(path.dirname(OUT), { recursive: true })
   fs.writeFileSync(OUT, JSON.stringify(out))
-  console.log(`[fetch-qqq] ✓ 写入 ${OUT}: ${bars.length} 条, ${bars[0].date} ~ ${bars[bars.length - 1].date}`)
+  console.log(`[fetch-nasdaq] ✓ 写入 ${OUT}: ${bars.length} 条, ${bars[0].date} ~ ${bars[bars.length - 1].date}`)
 }
 
 main().catch((e) => {
-  console.warn(`[fetch-qqq] ✗ 抓取失败: ${e.message}; 保留已有数据文件`)
-  // 不抛出, 避免阻断构建
+  console.warn(`[fetch-nasdaq] ✗ 抓取失败: ${e.message}; 保留已有数据文件`)
 })

@@ -5,7 +5,7 @@
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-lg font-bold tracking-tight">智能定投</h2>
-          <p class="text-xs text-ink3">纳斯达克 100 · 250 日均线策略</p>
+          <p class="text-xs text-ink3">纳斯达克100指数 (NDX) · 250 日均线策略</p>
         </div>
         <button v-if="dca.config" @click="sync" :disabled="syncing" class="btn-ghost">
           <svg class="h-4 w-4" :class="syncing ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -37,14 +37,18 @@
               {{ dca.deviationPct != null ? (dca.deviationPct > 0 ? '+' : '') + dca.deviationPct.toFixed(2) + '%' : '—' }}
             </Badge>
           </div>
-          <div class="mt-3 grid grid-cols-2 gap-3">
-            <div class="rounded-xl bg-surface2 px-3 py-2">
-              <div class="text-[11px] text-ink3">MA250 均线</div>
-              <div class="money text-base font-semibold">{{ dca.ma250 != null ? dca.ma250.toFixed(2) : '—' }}</div>
+          <div class="mt-3 grid grid-cols-3 gap-2">
+            <div class="rounded-xl bg-surface2 px-2.5 py-2">
+              <div class="text-[11px] text-ink3">MA120 半年线</div>
+              <div class="money text-sm font-semibold">{{ ma120 != null ? ma120.toFixed(2) : '—' }}</div>
             </div>
-            <div class="rounded-xl bg-surface2 px-3 py-2">
+            <div class="rounded-xl bg-surface2 px-2.5 py-2">
+              <div class="text-[11px] text-ink3">MA250 年线</div>
+              <div class="money text-sm font-semibold">{{ dca.ma250 != null ? dca.ma250.toFixed(2) : '—' }}</div>
+            </div>
+            <div class="rounded-xl bg-surface2 px-2.5 py-2">
               <div class="text-[11px] text-ink3">当前档位</div>
-              <div class="text-base font-semibold" :class="sideTextClass">{{ dca.bucket?.label || '—' }}</div>
+              <div class="text-sm font-semibold" :class="sideTextClass">{{ dca.bucket?.label || '—' }}</div>
             </div>
           </div>
           <div v-if="dca.syncError" class="mt-2 text-xs text-neg">同步失败: {{ dca.syncError }}</div>
@@ -55,10 +59,10 @@
           </div>
         </section>
 
-        <!-- 价格 vs MA250 曲线 -->
+        <!-- 价格 vs 均线 曲线 -->
         <section v-if="chartLabels.length > 1" class="card card-pad">
           <div class="flex items-center justify-between mb-1">
-            <span class="section-title">价格 vs 250 日均线</span>
+            <span class="section-title">价格 vs 均线 (MA120 / MA250)</span>
             <span class="text-[11px] text-ink3">近 {{ chartLabels.length }} 日</span>
           </div>
           <LineChart :labels="chartLabels" :series="chartSeries" :height="200" />
@@ -183,14 +187,20 @@ onMounted(async () => { await dca.load() })
 const syncing = ref(false)
 async function sync() {
   syncing.value = true
-  const r = await dca.syncIndex('QQQ.US')
+  const r = await dca.syncIndex()
   syncing.value = false
   if (!r.ok && r.error) alert('同步失败: ' + r.error)
 }
 
-// ---- 价格 vs MA250 曲线 ----
-const MA_PERIOD = 250
+// ---- 价格 vs 均线 曲线 (收盘价 + MA120 + MA250) ----
 const SHOW_DAYS = 160
+const ma120 = computed(() => {
+  const s = dca.series
+  if (s.length < 120) return null
+  const last120 = s.slice(-120).map(d => d.close)
+  if (last120.some(c => c == null || Number.isNaN(c))) return null
+  return last120.reduce((a, b) => a + b, 0) / 120
+})
 const chartLabels = computed(() => {
   const s = dca.series
   if (s.length === 0) return []
@@ -201,11 +211,13 @@ const chartSeries = computed(() => {
   const s = dca.series
   if (s.length === 0) return []
   const closes = s.map(d => d.close)
-  const ma = rollingMA(closes, MA_PERIOD)
+  const ma120 = rollingMA(closes, 120)
+  const ma250 = rollingMA(closes, 250)
   const start = Math.max(0, s.length - SHOW_DAYS)
   return [
     { label: '收盘价', data: closes.slice(start), color: '#10b981', fill: true },
-    { label: 'MA250', data: ma.slice(start), color: '#f59e0b' }
+    { label: 'MA120 半年线', data: ma120.slice(start), color: '#6366f1' },
+    { label: 'MA250 年线', data: ma250.slice(start), color: '#f59e0b' }
   ]
 })
 
@@ -268,7 +280,7 @@ function autoSplit() {
 async function saveCfg() {
   await dca.saveConfig({
     name: dca.config?.name ?? '纳指100定投',
-    symbol: 'QQQ.US',
+    symbol: 'NDX',
     monthlyBudget: yuanToFen(monthlyYuan.value ?? totalSplit.value),
     deviationAlertPercent: dca.config?.deviationAlertPercent ?? 5,
     weeklySplits: cfgDraft.value.weeklySplits.map(y => yuanToFen(y)) as [number, number, number, number]
