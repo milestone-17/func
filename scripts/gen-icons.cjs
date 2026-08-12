@@ -19,7 +19,7 @@ const FONT = {
   C: ['01110','10001','10000','10000','10000','10001','01110']
 }
 const FG = [255, 255, 255]
-const BG = [37, 99, 235] // 蓝
+const BG = [16, 185, 129] // emerald-500 (品牌色)
 
 function renderText(buf, w, h, text, scale) {
   const chars = text.split('')

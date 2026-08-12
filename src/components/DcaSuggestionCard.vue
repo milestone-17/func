@@ -1,34 +1,50 @@
 <template>
-  <div :class="['rounded-lg border p-3', exceeds ? 'border-red-400 bg-red-50' : 'border-gray-200']">
-    <div class="flex items-center justify-between">
-      <div>
-        <div class="text-sm text-gray-500">第 {{ weekIndex }} 周 · 分扣 ¥{{ split }}</div>
-        <div class="text-xs mt-1">
-          偏离 <span :class="devClass">{{ deviation.toFixed(2) }}%</span> ·
-          档位 <strong>{{ bucket.label }}</strong>
+  <div :class="['card card-pad fade-in', exceeds ? 'ring-1 ring-neg/40' : '']">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <span class="grid h-7 w-7 place-items-center rounded-full bg-surface2 text-xs font-bold text-ink2">{{ weekIndex }}</span>
+          <span class="text-sm font-medium text-ink">第 {{ weekIndex }} 周</span>
+          <Badge :tone="sideTone">{{ bucket.label }}</Badge>
+        </div>
+        <div class="mt-1.5 text-xs text-ink3">
+          基础分扣 <span class="money text-ink2 font-medium">¥{{ split.toFixed(2) }}</span>
+          · 系数 <span class="money font-semibold" :class="rateClass">×{{ bucket.rate.toFixed(1) }}</span>
         </div>
       </div>
-      <div class="text-right">
-        <div class="text-xs text-gray-500">建议金额</div>
-        <div class="text-xl font-semibold" :class="exceeds ? 'text-red-600' : 'text-blue-600'">¥{{ suggested.toFixed(2) }}</div>
+      <div class="text-right shrink-0">
+        <div class="text-[11px] text-ink3">建议投入</div>
+        <div class="money text-2xl font-bold leading-tight" :class="exceeds ? 'text-neg' : 'text-brand'">¥{{ suggested.toFixed(0) }}</div>
       </div>
     </div>
-    <div v-if="exceeds" class="mt-2 text-xs text-red-600">
-      ⚠ 已超过本周基础额,确认执行?
-      <div class="flex gap-2 mt-2">
-        <button class="px-2 py-1 border rounded" @click="$emit('skip')">跳过</button>
-        <button class="px-2 py-1 bg-red-500 text-white rounded" @click="$emit('confirm')">仍按建议投</button>
+
+    <!-- 金额条: 基础 vs 建议 -->
+    <div class="mt-3">
+      <div class="relative h-2 rounded-full bg-surface2 overflow-hidden">
+        <div class="absolute inset-y-0 left-0 rounded-full transition-[width] duration-500"
+             :style="{ width: baseWidth + '%', backgroundColor: 'rgb(var(--ink3))' }" />
+        <div class="absolute inset-y-0 left-0 rounded-full transition-[width] duration-500"
+             :style="{ width: suggestWidth + '%', backgroundColor: exceeds ? 'rgb(var(--neg))' : 'rgb(var(--brand))' }" />
       </div>
     </div>
-    <div v-else class="mt-2 flex gap-2">
-      <button class="px-3 py-1 bg-blue-500 text-white rounded text-sm" @click="$emit('confirm')">按建议投</button>
-      <button class="px-3 py-1 border rounded text-sm" @click="$emit('skip')">跳过</button>
+
+    <div v-if="exceeds" class="mt-3 rounded-xl bg-neg/8 px-3 py-2 text-xs text-neg">
+      ⚠ 当前处于高位,建议金额已超过基础分扣。
+      <div class="mt-2 flex gap-2">
+        <button class="btn-ghost !py-1 !text-xs flex-1" @click="$emit('skip')">本周跳过</button>
+        <button class="btn-danger !py-1 !text-xs flex-1" @click="$emit('confirm')">仍按建议投</button>
+      </div>
+    </div>
+    <div v-else class="mt-3 flex gap-2">
+      <button class="btn-primary flex-1" @click="$emit('confirm')">按建议投入</button>
+      <button class="btn-ghost" @click="$emit('skip')">跳过</button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import Badge from './Badge.vue'
 
 const props = defineProps<{
   weekIndex: 1 | 2 | 3 | 4
@@ -40,9 +56,20 @@ const props = defineProps<{
 }>()
 defineEmits<{ confirm: []; skip: [] }>()
 
-const devClass = computed(() => {
-  if (props.deviation > 0) return 'text-red-500'
-  if (props.deviation < 0) return 'text-green-600'
-  return 'text-gray-500'
+const sideTone = computed<'green' | 'red' | 'amber' | 'blue'>(() => {
+  if (props.bucket.side === 'high') return 'red'
+  if (props.bucket.side === 'low') return 'green'
+  return 'blue'
+})
+const rateClass = computed(() => (props.bucket.rate >= 1 ? 'text-pos' : 'text-neg'))
+
+// 条形比例: 以"基础分扣"与"建议金额"中较大者为 100%
+const baseWidth = computed(() => {
+  const max = Math.max(props.split, props.suggested, 1)
+  return Math.min(100, (props.split / max) * 100)
+})
+const suggestWidth = computed(() => {
+  const max = Math.max(props.split, props.suggested, 1)
+  return Math.min(100, (props.suggested / max) * 100)
 })
 </script>

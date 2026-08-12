@@ -35,16 +35,16 @@ export const categoryRepo = {
     const list = await this.list()
     if (list.length > 0) return
     const defaults: Omit<Category, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>[] = [
-      { name: '餐饮', type: 'expense', color: '#f87171', order: 0 },
-      { name: '交通', type: 'expense', color: '#fb923c', order: 1 },
-      { name: '购物', type: 'expense', color: '#fbbf24', order: 2 },
-      { name: '居住', type: 'expense', color: '#a3e635', order: 3 },
-      { name: '娱乐', type: 'expense', color: '#34d399', order: 4 },
-      { name: '医疗', type: 'expense', color: '#22d3ee', order: 5 },
-      { name: '其他', type: 'expense', color: '#94a3b8', order: 6 },
-      { name: '工资', type: 'income', color: '#60a5fa', order: 0 },
-      { name: '奖金', type: 'income', color: '#818cf8', order: 1 },
-      { name: '其他收入', type: 'income', color: '#a78bfa', order: 2 }
+      { name: '餐饮', type: 'expense', color: '#f87171', icon: '🍜', order: 0 },
+      { name: '交通', type: 'expense', color: '#fb923c', icon: '🚌', order: 1 },
+      { name: '购物', type: 'expense', color: '#fbbf24', icon: '🛍️', order: 2 },
+      { name: '居住', type: 'expense', color: '#a3e635', icon: '🏠', order: 3 },
+      { name: '娱乐', type: 'expense', color: '#34d399', icon: '🎮', order: 4 },
+      { name: '医疗', type: 'expense', color: '#22d3ee', icon: '💊', order: 5 },
+      { name: '其他', type: 'expense', color: '#94a3b8', icon: '📝', order: 6 },
+      { name: '工资', type: 'income', color: '#60a5fa', icon: '💰', order: 0 },
+      { name: '奖金', type: 'income', color: '#818cf8', icon: '🎁', order: 1 },
+      { name: '其他收入', type: 'income', color: '#a78bfa', icon: '➕', order: 2 }
     ]
     for (const d of defaults) await this.add(d)
   }
