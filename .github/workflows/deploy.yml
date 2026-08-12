@@ -3,6 +3,9 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  schedule:
+    # 每日美股收盘后自动刷新行情数据 (UTC 22:17 ≈ 北京时间次日 06:17)
+    - cron: '17 22 * * 1-5'
   workflow_dispatch:
 
 permissions:
@@ -25,6 +28,7 @@ jobs:
           cache: 'npm'
       - run: npm ci || npm install
       - run: node scripts/gen-icons.cjs
+      - run: node scripts/fetch-qqq.cjs
       - run: npm run test -- --run
       - run: npm run build
       - uses: actions/configure-pages@v4

@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { dcaConfigRepo } from '@/repos/dcaConfigRepo'
 import { indexDataRepo } from '@/repos/indexDataRepo'
 import { dcaExecutionRepo } from '@/repos/dcaExecutionRepo'
-import { fetchStooqBars } from '@/lib/stooq'
+import { loadBundledQuotes, fetchLiveQuotes, barsToIndexData } from '@/lib/yahoo'
 import { computeMA250 } from '@/lib/ma'
 import { computeDeviation } from '@/lib/deviation'
 import { computeWeekSuggestion, type SuggestionResult } from '@/lib/dca'
@@ -21,6 +21,7 @@ export const useDcaStore = defineStore('dca', () => {
   })
   const lastSyncAt = ref<string | null>(null)
   const syncError = ref<string | null>(null)
+  const dataSource = ref<'yahoo' | 'cache' | null>(null)  // cache = 预置数据
 
   const ma250 = computed<number | null>(() => {
     const closes = series.value.map(d => d.close)
@@ -37,7 +38,18 @@ export const useDcaStore = defineStore('dca', () => {
 
   async function load() {
     config.value = (await dcaConfigRepo.get()) || null
-    series.value = await indexDataRepo.listBySymbol(DEFAULT_SYMBOL)
+    let s = await indexDataRepo.listBySymbol(DEFAULT_SYMBOL)
+    // 首次进入: 用打包进站点的预置行情初始化 (同源, 必成功)
+    if (s.length < 250) {
+      const bundled = await loadBundledQuotes()
+      if (bundled && bundled.bars.length >= 250) {
+        for (const r of barsToIndexData(bundled.bars, 'cache')) await indexDataRepo.put(r)
+        s = await indexDataRepo.listBySymbol(DEFAULT_SYMBOL)
+        lastSyncAt.value = new Date(bundled.fetchedAt).toISOString()
+        dataSource.value = 'cache'
+      }
+    }
+    series.value = s
     await recompute()
   }
 
@@ -46,40 +58,29 @@ export const useDcaStore = defineStore('dca', () => {
     await recompute()
   }
 
-  function todayMinusDays(days: number): string {
-    const d = new Date()
-    d.setDate(d.getDate() - days)
-    return d.toISOString().slice(0, 10)
-  }
-
   async function syncIndex(symbol: string = DEFAULT_SYMBOL): Promise<{ ok: boolean; error?: string }> {
     syncError.value = null
-    try {
-      // 取 400 天数据 (MA250 + buffer)
-      const to = todayMinusDays(0)
-      const from = todayMinusDays(400)
-      const bars = await fetchStooqBars(symbol, from, to)
-      if (bars.length < 250) {
-        return { ok: false, error: '数据不足 250 天' }
+    // 1. 尝试实时拉取 (Yahoo via 代理链; 浏览器里常失败)
+    let bars = await fetchLiveQuotes()
+    let source: 'yahoo' | 'cache' = 'yahoo'
+    // 2. 失败则回落到打包进站点的预置行情 (同源, 必成功)
+    if (!bars || bars.length < 250) {
+      const bundled = await loadBundledQuotes()
+      if (bundled && bundled.bars.length >= 250) {
+        bars = bundled.bars
+        source = 'cache'
       }
-      for (const b of bars) {
-        await indexDataRepo.put({
-          symbol,
-          date: b.date,
-          close: b.close,
-          ma250: null,
-          source: 'stooq',
-          fetchedAt: Date.now()
-        })
-      }
-      series.value = await indexDataRepo.listBySymbol(symbol)
-      lastSyncAt.value = new Date().toISOString()
-      await recompute()
-      return { ok: true }
-    } catch (e: any) {
-      syncError.value = e?.message || '同步失败'
-      return { ok: false, error: syncError.value! }
     }
+    if (!bars || bars.length < 250) {
+      syncError.value = '无法获取行情,请手动录入'
+      return { ok: false, error: syncError.value }
+    }
+    for (const r of barsToIndexData(bars, source)) await indexDataRepo.put(r)
+    series.value = await indexDataRepo.listBySymbol(symbol)
+    lastSyncAt.value = new Date().toISOString()
+    dataSource.value = source
+    await recompute()
+    return { ok: true }
   }
 
   /** 手动录入: 把整个序列作为一条 "今天" 的 manual 行写入, MA250 直接算好 */
@@ -133,7 +134,7 @@ export const useDcaStore = defineStore('dca', () => {
   }
 
   return {
-    config, series, ma250, lastClose, bucket, suggestions, lastSyncAt, syncError, deviationPct,
+    config, series, ma250, lastClose, bucket, suggestions, lastSyncAt, syncError, deviationPct, dataSource,
     load, saveConfig, syncIndex, manualSetIndex, recompute, recordExecution
   }
 })

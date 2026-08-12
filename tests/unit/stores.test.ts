@@ -126,22 +126,20 @@ describe('DCA store', () => {
     })
     expect(d.config?.weeklySplits).toEqual([20000, 20000, 20000, 20000])
 
-    // mock stooq: 生成 260 天收盘价, 最新价高于 MA → 高位
+    // mock Yahoo chart API: 生成 260 天收盘价, 最新价高于 MA → 高位
     const closes: number[] = []
     for (let i = 0; i < 260; i++) closes.push(100 + Math.round(Math.sin(i / 10) * 5))
-    const csvLines = ['Date,Open,High,Low,Close,Volume']
-    let y = 2025, m = 8, day = 1
-    for (let i = 0; i < 260; i++) {
-      csvLines.push(`${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')},${closes[i]},${closes[i]},${closes[i]},${closes[i]},1000`)
-      day++
-      if (day > 28) { day = 1; m++ }
-      if (m > 12) { m = 1; y++ }
-    }
-    const csv = csvLines.join('\n')
+    const timestamps: number[] = []
+    const base = Math.floor(Date.UTC(2025, 7, 1) / 1000) // 2025-08-01 (秒)
+    for (let i = 0; i < 260; i++) timestamps.push(base + i * 86400)
+    const yahooJson = JSON.stringify({
+      chart: { result: [{ timestamp: timestamps, indicators: { quote: [{ close: closes }] } }] }
+    })
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: true,
       status: 200,
-      text: async () => csv
+      text: async () => yahooJson,
+      json: async () => JSON.parse(yahooJson)
     } as Response)))
 
     const r = await d.syncIndex('QQQ.US')

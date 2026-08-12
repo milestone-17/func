@@ -48,7 +48,11 @@
             </div>
           </div>
           <div v-if="dca.syncError" class="mt-2 text-xs text-neg">同步失败: {{ dca.syncError }}</div>
-          <div v-if="dca.lastSyncAt" class="mt-1 text-[11px] text-ink3">最近同步 {{ fmtTime(dca.lastSyncAt) }}</div>
+          <div class="mt-1 flex items-center gap-2 text-[11px] text-ink3">
+            <span v-if="dca.lastSyncAt">更新于 {{ fmtTime(dca.lastSyncAt) }}</span>
+            <Badge v-if="dca.dataSource === 'cache'" tone="amber">预置数据</Badge>
+            <Badge v-else-if="dca.dataSource === 'yahoo'" tone="green">实时</Badge>
+          </div>
         </section>
 
         <!-- 价格 vs MA250 曲线 -->

@@ -24,7 +24,7 @@ export interface IndexData {
   date: ISODate
   close: number
   ma250: number | null
-  source: 'stooq' | 'manual' | 'cache'
+  source: 'yahoo' | 'manual' | 'cache'
   fetchedAt: Timestamp
 }
 

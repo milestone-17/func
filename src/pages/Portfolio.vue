@@ -169,15 +169,12 @@ const priceDrafts = ref<Record<string, number | null>>({})
 
 async function refreshPrice(h: any) {
   if (h.market === 'US') {
-    const symbol = h.symbol.toLowerCase() + '.us'
     try {
-      const to = new Date().toISOString().slice(0, 10)
-      const from = new Date(Date.now() - 14 * 86400_000).toISOString().slice(0, 10)
-      const { fetchStooqBars } = await import('@/lib/stooq')
-      const bars = await fetchStooqBars(symbol, from, to)
-      if (bars.length > 0) {
-        await portfolio.updatePrice(h.id, yuanToFen(bars[bars.length - 1].close))
-        priceDrafts.value[h.id] = bars[bars.length - 1].close
+      const { fetchLiveLatestPrice } = await import('@/lib/yahoo')
+      const price = await fetchLiveLatestPrice(h.symbol)
+      if (price != null && price > 0) {
+        await portfolio.updatePrice(h.id, yuanToFen(price))
+        priceDrafts.value[h.id] = price
       }
     } catch { priceDrafts.value[h.id] = null }
   } else if (h.market === 'CN') {
