@@ -31,6 +31,13 @@ jobs:
       - run: node scripts/fetch-nasdaq.cjs
       - run: npm run test -- --run
       - run: npm run build
+      # E2E: Playwright 真实浏览器回归 (起 preview → 逐页操作 → 检查控制台错误)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install playwright
+      - run: python -m playwright install --with-deps chromium
+      - run: python3 tests/e2e/app.py
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:
