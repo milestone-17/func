@@ -32,5 +32,9 @@
 - [x] 4.1 `npm run test` 全绿（含 e2e 扩展用例） （219/219 unit 通过）
 - [x] 4.2 `npm run build` 通过 （vue-tsc + vite build ✓）
 - [x] 4.3 `npm run test:e2e` 通过 （100/100 通过, 非预期错误 0）
-- [ ] 4.4 提交 e2e 扩展与验证脚本（非产品代码）；确认真实备份文件、本地用户数据、线上均未被改动
-  （产品 bug 修复 `src/lib/position.ts` + `tests/unit/position.test.ts` 已单独提交 93bbd21）
+- [x] 4.4 提交 e2e 扩展与验证脚本（非产品代码）；确认真实备份文件、本地用户数据、线上均未被改动
+  - 产品 bug 修复 `src/lib/position.ts` + `tests/unit/position.test.ts` 单独提交 `93bbd21`
+  - 验证代码 `tests/e2e/app.py` + `verify_real_data.py` + 变更工件归档: `7ed665b` + `903cdee`
+  - CI 部署修复 `f905c05` (e2e mock 东财 push2 单票接口, 消除 CORS 误报)
+  - 部署: Actions run `31689726163` **success**; 线上 `https://milestone-17.github.io/func/` 资产与本地 dist 字节一致 (Portfolio-*.js sha256 相同), 修复已上线
+  - 真实备份 sha256 前后一致 (`27c5735d…7f8`)、测试仅触 throwaway 浏览器 IndexedDB、线上用户数据(浏览器本地)不受部署影响
