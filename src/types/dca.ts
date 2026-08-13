@@ -46,3 +46,16 @@ export interface DCAExecution {
   updatedAt: Timestamp
   deletedAt?: Timestamp | null
 }
+
+/** 每日定投配置 (单例, id = 'daily') */
+export interface DailyDcaConfig {
+  id: ID
+  enabled: boolean
+  holdingId: ID | null      // 定投目标持仓
+  dailyAmountFen: number    // 每日定投金额 (分)
+  lastExecutedDate?: ISODate | null  // 最近一次自动记账日期 (幂等判定)
+  note?: string
+  createdAt: Timestamp
+  updatedAt: Timestamp
+  deletedAt?: Timestamp | null
+}

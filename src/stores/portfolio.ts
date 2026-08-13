@@ -3,8 +3,10 @@ import { ref, computed } from 'vue'
 import { holdingRepo } from '@/repos/holdingRepo'
 import { holdingTxnRepo } from '@/repos/holdingTxnRepo'
 import { convertCurrency } from '@/lib/currency'
+import { fetchHoldingPrice } from '@/lib/yahoo'
+import { yuanToFen } from '@/lib/money'
 import { useSettingsStore } from '@/stores/settings'
-import type { Holding, HoldingTxn, Currency, Market } from '@/types/portfolio'
+import type { Holding, HoldingTxn, Currency, Market, HoldingCategory } from '@/types/portfolio'
 
 export interface HoldingView {
   id: string
@@ -13,6 +15,7 @@ export interface HoldingView {
   market: Market
   currency: Currency
   type: string
+  category: HoldingCategory
   quantity: number
   avgCost: number
   currentPrice: number | null
@@ -49,7 +52,7 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       }
       out.push({
         id: h.id, symbol: h.symbol, name: h.name,
-        market: h.market, currency: h.currency, type: h.type,
+        market: h.market, currency: h.currency, type: h.type, category: h.category ?? 'other',
         quantity, avgCost, currentPrice: price,
         marketValueOriginal, marketValueCNY, totalCost, unrealized, unrealizedPct
       })
@@ -73,6 +76,33 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     await refresh()
   }
 
+  /**
+   * 拉取全部持仓最新价。逐只按市场路由拉取, 成功更新现价;
+   * 失败 (含接口不可用) 保留原值, 仅累计到 failed 列表, 绝不清空。
+   */
+  async function refreshAllPrices(): Promise<{ updated: number; failed: { id: string; name: string }[] }> {
+    const list = await holdingRepo.list()
+    const failed: { id: string; name: string }[] = []
+    let updated = 0
+    for (const h of list) {
+      try {
+        const price = await fetchHoldingPrice(h.market, h.symbol)
+        if (price != null && price > 0) {
+          h.currentPrice = yuanToFen(price)
+          h.currentPriceAt = Date.now()
+          await holdingRepo.put(h)
+          updated++
+        } else {
+          failed.push({ id: h.id, name: h.name })
+        }
+      } catch {
+        failed.push({ id: h.id, name: h.name })
+      }
+    }
+    await refresh()
+    return { updated, failed }
+  }
+
   async function addTxn(input: Omit<HoldingTxn, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) {
     await holdingTxnRepo.add(input)
     await refresh()
@@ -84,5 +114,17 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   const totalCost = computed(() => holdings.value.reduce((s, h) => s + h.totalCost, 0))
   const totalUnrealized = computed(() => holdings.value.reduce((s, h) => s + (h.unrealized || 0), 0))
 
-  return { holdings, loaded, refresh, addHolding, updatePrice, addTxn, totalMarketValueCNY, totalCost, totalUnrealized }
+  /** 按 category 聚合: category -> { 小计市值(CNY), 数量 } */
+  const byCategory = computed(() => {
+    const map: Record<string, { marketValueCNY: number; count: number }> = {}
+    for (const h of holdings.value) {
+      const cat = h.category
+      if (!map[cat]) map[cat] = { marketValueCNY: 0, count: 0 }
+      map[cat].marketValueCNY += h.marketValueCNY || 0
+      map[cat].count += 1
+    }
+    return map
+  })
+
+  return { holdings, loaded, refresh, addHolding, updatePrice, refreshAllPrices, addTxn, totalMarketValueCNY, totalCost, totalUnrealized, byCategory }
 })

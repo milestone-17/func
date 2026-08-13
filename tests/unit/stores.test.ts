@@ -114,24 +114,13 @@ describe('永久组合 store', () => {
   })
 })
 
-describe('DCA store', () => {
-  it('保存配置 + 同步行情 → 4 周建议', async () => {
-    const d = useDcaStore()
-    await d.load()
-    expect(d.config).toBeNull()
-    await d.saveConfig({
-      name: '定投', symbol: 'QQQ.US', monthlyBudget: 80000,
-      weeklySplits: [20000, 20000, 20000, 20000],
-      deviationAlertPercent: 5
-    })
-    expect(d.config?.weeklySplits).toEqual([20000, 20000, 20000, 20000])
-
-    // mock Yahoo chart API: 生成 260 天收盘价, 最新价高于 MA → 高位
+describe('DCA store (多标的)', () => {
+  async function mockYahooBars(n: number, baseClose: number): Promise<number[]> {
     const closes: number[] = []
-    for (let i = 0; i < 260; i++) closes.push(100 + Math.round(Math.sin(i / 10) * 5))
+    for (let i = 0; i < n; i++) closes.push(baseClose + Math.round(Math.sin(i / 10) * 5))
     const timestamps: number[] = []
-    const base = Math.floor(Date.UTC(2025, 7, 1) / 1000) // 2025-08-01 (秒)
-    for (let i = 0; i < 260; i++) timestamps.push(base + i * 86400)
+    const base = Math.floor(Date.UTC(2025, 7, 1) / 1000) // 秒
+    for (let i = 0; i < n; i++) timestamps.push(base + i * 86400)
     const yahooJson = JSON.stringify({
       chart: { result: [{ timestamp: timestamps, indicators: { quote: [{ close: closes }] } }] }
     })
@@ -141,18 +130,48 @@ describe('DCA store', () => {
       text: async () => yahooJson,
       json: async () => JSON.parse(yahooJson)
     } as Response)))
+    return closes
+  }
 
-    const r = await d.syncIndex('QQQ.US')
+  it('NDX: 保存配置 + 同步 → 4 周建议 + MA180/MA250', async () => {
+    const d = useDcaStore()
+    await d.load()
+    d.setActive('^NDX')
+    expect(d.config).toBeNull()
+    await d.saveConfig({
+      name: '纳指定投', symbol: '^NDX', monthlyBudget: 80000,
+      weeklySplits: [20000, 20000, 20000, 20000], deviationAlertPercent: 5
+    })
+    expect(d.config?.weeklySplits).toEqual([20000, 20000, 20000, 20000])
+
+    const closes = await mockYahooBars(260, 100)
+    const r = await d.syncIndex()
     expect(r.ok).toBe(true)
     expect(d.lastClose).toBe(closes[259])
     expect(d.ma250).not.toBeNull()
-    // 4 周建议都算出来
+    expect(d.ma180).not.toBeNull()
     expect(d.suggestions[1]).not.toBeNull()
     expect(d.suggestions[2]).not.toBeNull()
     expect(d.suggestions[3]).not.toBeNull()
     expect(d.suggestions[4]).not.toBeNull()
-    // 记录一次执行
+    // 档位系数: 高位 (deviation>0) ≤1, 低位 (deviation<0) ≥1
+    const dev = d.deviationPct!
+    const rate = d.bucket!.rate
+    expect(dev > 0 ? rate <= 1 : rate >= 1).toBe(true)
     await d.recordExecution(1, d.suggestions[1]!.suggestedAmount)
     vi.unstubAllGlobals()
+  })
+
+  it('多标的状态独立 (NDX / GSPC 配置互不影响)', async () => {
+    const d = useDcaStore()
+    await d.load()
+    d.setActive('^NDX')
+    await d.saveConfig({ name: 'NDX', symbol: '^NDX', monthlyBudget: 80000, weeklySplits: [20000, 20000, 20000, 20000], deviationAlertPercent: 5 })
+    d.setActive('^GSPC')
+    await d.saveConfig({ name: 'SPX', symbol: '^GSPC', monthlyBudget: 50000, weeklySplits: [12500, 12500, 12500, 12500], deviationAlertPercent: 5 })
+    d.setActive('^NDX')
+    expect(d.config?.monthlyBudget).toBe(80000)
+    d.setActive('^GSPC')
+    expect(d.config?.monthlyBudget).toBe(50000)
   })
 })

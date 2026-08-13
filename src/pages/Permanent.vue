@@ -3,7 +3,7 @@
     <div class="space-y-4">
       <div>
         <h2 class="text-lg font-bold tracking-tight">永久投资组合</h2>
-        <p class="text-xs text-ink3">Harry Browne · 25/25/25/25 全天候配置</p>
+        <p class="text-xs text-ink3">Harry Browne · 25/25/25/25 全天候配置 · 实际占比自动来自持仓</p>
       </div>
 
       <!-- 总览 -->

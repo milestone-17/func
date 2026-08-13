@@ -1,7 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 
 export const DB_NAME = 'func-db'
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 export interface FuncDB extends DBSchema {
   transactions: { key: string; value: any; indexes: { 'by-date': string; 'by-type': string } }
@@ -13,6 +13,7 @@ export interface FuncDB extends DBSchema {
   dcaConfigs: { key: string; value: any }
   indexData: { key: string; value: any; indexes: { 'by-symbol': string; 'by-date': string } }
   dcaExecutions: { key: string; value: any; indexes: { 'by-config': string } }
+  dailyDcaConfigs: { key: string; value: any }
   settings: { key: string; value: any }
   meta: { key: string; value: any }
 }
@@ -22,28 +23,37 @@ export interface FuncDB extends DBSchema {
 // 不缓存的原因: 测试场景下 db.close() 后缓存会失效, 重新打开失败.
 export function openDb(): Promise<IDBPDatabase<FuncDB>> {
   return openDB<FuncDB>(DB_NAME, SCHEMA_VERSION, {
-    upgrade(db) {
-      const tx = db.createObjectStore('transactions', { keyPath: 'id' })
-      tx.createIndex('by-date', 'date')
-      tx.createIndex('by-type', 'type')
-      db.createObjectStore('categories', { keyPath: 'id' })
-      const b = db.createObjectStore('budgets', { keyPath: 'id' })
-      b.createIndex('by-month', 'month')
-      const h = db.createObjectStore('holdings', { keyPath: 'id' })
-      h.createIndex('by-symbol', 'symbol')
-      h.createIndex('by-type', 'type')
-      const ht = db.createObjectStore('holdingTxns', { keyPath: 'id' })
-      ht.createIndex('by-holding', 'holdingId')
-      ht.createIndex('by-date', 'date')
-      db.createObjectStore('permanentTargets', { keyPath: 'id' })
-      db.createObjectStore('dcaConfigs', { keyPath: 'id' })
-      const idx = db.createObjectStore('indexData', { keyPath: ['symbol', 'date'] })
-      idx.createIndex('by-symbol', 'symbol')
-      idx.createIndex('by-date', 'date')
-      const dx = db.createObjectStore('dcaExecutions', { keyPath: 'id' })
-      dx.createIndex('by-config', 'configId')
-      db.createObjectStore('settings', { keyPath: 'id' })
-      db.createObjectStore('meta', { keyPath: 'key' })
+    upgrade(db, oldVersion) {
+      // v1: 初始全部 store
+      if (oldVersion < 1) {
+        const tx = db.createObjectStore('transactions', { keyPath: 'id' })
+        tx.createIndex('by-date', 'date')
+        tx.createIndex('by-type', 'type')
+        db.createObjectStore('categories', { keyPath: 'id' })
+        const b = db.createObjectStore('budgets', { keyPath: 'id' })
+        b.createIndex('by-month', 'month')
+        const h = db.createObjectStore('holdings', { keyPath: 'id' })
+        h.createIndex('by-symbol', 'symbol')
+        h.createIndex('by-type', 'type')
+        const ht = db.createObjectStore('holdingTxns', { keyPath: 'id' })
+        ht.createIndex('by-holding', 'holdingId')
+        ht.createIndex('by-date', 'date')
+        db.createObjectStore('permanentTargets', { keyPath: 'id' })
+        db.createObjectStore('dcaConfigs', { keyPath: 'id' })
+        const idx = db.createObjectStore('indexData', { keyPath: ['symbol', 'date'] })
+        idx.createIndex('by-symbol', 'symbol')
+        idx.createIndex('by-date', 'date')
+        const dx = db.createObjectStore('dcaExecutions', { keyPath: 'id' })
+        dx.createIndex('by-config', 'configId')
+        db.createObjectStore('settings', { keyPath: 'id' })
+        db.createObjectStore('meta', { keyPath: 'key' })
+      }
+      // v2: 仅新增每日定投配置 store; 不重建任何已有 store, 历史数据零丢失.
+      if (oldVersion < 2) {
+        if (!db.objectStoreNames.contains('dailyDcaConfigs')) {
+          db.createObjectStore('dailyDcaConfigs', { keyPath: 'id' })
+        }
+      }
     }
   })
 }

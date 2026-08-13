@@ -1,6 +1,7 @@
 import type { ID, ISODate, Timestamp } from './common'
 
 export type HoldingType = 'stock' | 'etf' | 'crypto' | 'bond' | 'cash' | 'gold'
+export type HoldingCategory = 'nasdaq100' | 'sp500' | 'bond' | 'dividend' | 'other'
 export type Market = 'CN' | 'US' | 'HK'
 export type Currency = 'CNY' | 'USD'
 
@@ -9,6 +10,7 @@ export interface Holding {
   symbol: string
   name: string
   type: HoldingType
+  category?: HoldingCategory  // 资产分类标签, 默认 'other'
   market: Market
   currency: Currency
   quantity: number

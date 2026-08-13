@@ -21,18 +21,34 @@ export interface BundledQuote {
 const BASE = import.meta.env.BASE_URL || '/'
 const INDEX_SYMBOL = '^NDX'
 
-/** 读取打包进站点的预置行情 (同源, 必成功) */
-export async function loadBundledQuotes(): Promise<BundledQuote | null> {
+/** 读取打包进站点的预置行情 (同源, 必成功)。优先新结构 index-data.json, 旧结构降级 NDX */
+export async function loadBundledQuotes(symbol: string = '^NDX'): Promise<BundledQuote | null> {
+  // 1. 新结构: index-data.json { indices: { '^NDX': {...}, '^GSPC': {...} } }
   try {
-    const res = await fetch(`${BASE}nasdaq-data.json`, { cache: 'no-cache' })
-    if (!res.ok) return null
-    return (await res.json()) as BundledQuote
-  } catch {
-    return null
+    const res = await fetch(`${BASE}index-data.json`, { cache: 'no-cache' })
+    if (res.ok) {
+      const data = await res.json()
+      const entry = data?.indices?.[symbol]
+      if (entry && Array.isArray(entry.bars) && entry.bars.length > 0) {
+        return {
+          symbol, name: entry.name, fetchedAt: entry.fetchedAt ?? Date.now(),
+          source: entry.source ?? 'cache', count: entry.bars.length, bars: entry.bars
+        }
+      }
+    }
+  } catch { /* fall through to legacy */ }
+  // 2. 旧结构降级: nasdaq-data.json 仅含 NDX
+  if (symbol === '^NDX' || symbol === 'NDX') {
+    try {
+      const res = await fetch(`${BASE}nasdaq-data.json`, { cache: 'no-cache' })
+      if (res.ok) return (await res.json()) as BundledQuote
+    } catch { /* ignore */ }
   }
+  return null
 }
 
-const NDX_CHART = `https://query1.finance.yahoo.com/v8/finance/chart/%5ENDX?range=2y&interval=1d`
+const NDX_CHART = (symbol: string) =>
+  `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=2y&interval=1d`
 // 公共 CORS 代理链 (逐个尝试; 这些服务不稳定, 失败属正常)
 const PROXIES = [
   (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
@@ -58,11 +74,12 @@ export function parseYahooChart(json: any): { date: string; close: number }[] {
 }
 
 /**
- * 实时刷新 NDX: 尝试直连 + 代理链拉取 Yahoo。
+ * 实时刷新指数行情: 尝试直连 + 代理链拉取 Yahoo。
  * 返回 bars 或 null (失败)。
  */
-export async function fetchLiveQuotes(): Promise<{ date: string; close: number }[] | null> {
-  const urls = [NDX_CHART, ...PROXIES.map(p => p(NDX_CHART))]
+export async function fetchLiveQuotes(symbol: string = '^NDX'): Promise<{ date: string; close: number }[] | null> {
+  const chart = NDX_CHART(symbol)
+  const urls = [chart, ...PROXIES.map(p => p(chart))]
   for (const url of urls) {
     try {
       const res = await fetch(url, { cache: 'no-cache' })
@@ -75,6 +92,26 @@ export async function fetchLiveQuotes(): Promise<{ date: string; close: number }
       // 试下一个
     }
   }
+  return null
+}
+
+/** 按市场路由拉取单只持仓最新价 (元)。失败返回 null, 绝不抛出。 */
+export async function fetchHoldingPrice(market: string, symbol: string): Promise<number | null> {
+  if (market === 'US') return fetchLiveLatestPrice(symbol)
+  if (market === 'CN') {
+    try {
+      const secid = symbol.startsWith('6') ? `1.${symbol}` : `0.${symbol}`
+      const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f43`
+      const res = await fetch(url, { cache: 'no-cache' })
+      if (!res.ok) return null
+      const j = await res.json()
+      const v = j?.data?.f43
+      return typeof v === 'number' && v > 0 ? v / 100 : null
+    } catch {
+      return null
+    }
+  }
+  // HK 等暂不支持自动拉取, 返回 null (调用方保留原值)
   return null
 }
 
@@ -100,9 +137,9 @@ export async function fetchLiveLatestPrice(symbol: string): Promise<number | nul
 }
 
 /** bars → IndexData 行 */
-export function barsToIndexData(bars: { date: string; close: number }[], source: 'yahoo' | 'manual' | 'cache' = 'yahoo'): IndexData[] {
+export function barsToIndexData(bars: { date: string; close: number }[], source: 'yahoo' | 'manual' | 'cache' = 'yahoo', symbol: string = INDEX_SYMBOL): IndexData[] {
   return bars.map(b => ({
-    symbol: INDEX_SYMBOL,
+    symbol,
     date: b.date,
     close: b.close,
     ma250: null,

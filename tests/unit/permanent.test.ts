@@ -66,4 +66,17 @@ describe('permanent portfolio', () => {
     expect(r5.alerts.length).toBeGreaterThan(0)
     expect(r20.alerts.length).toBe(0)
   })
+
+  it('computePermanentDeviation: 仅部分类别有持仓 → 其余实际 0% 并报警', () => {
+    // 模拟用户只持有股票+债券 (其余无现价被 store 过滤掉) → cash/gold 实际 0%
+    const h = [
+      { type: 'stock', marketValueCNY: 800000 },
+      { type: 'bond', marketValueCNY: 200000 }
+    ] as any[]
+    const r = computePermanentDeviation(h, targets, 5)
+    expect(r.total).toBe(1000000)
+    expect(r.deviations.find(d => d.assetType === 'stock')!.actualPercent).toBe(80)
+    expect(r.alerts.some(a => a.assetType === 'cash')).toBe(true)
+    expect(r.alerts.some(a => a.assetType === 'gold')).toBe(true)
+  })
 })
