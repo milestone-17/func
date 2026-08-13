@@ -1,0 +1,22 @@
+{
+  "exportedAt": "2026-08-13T01:07:43.243Z",
+  "sourceNote": "func-backup-20260813-0907.json 16 只持仓 + 2026-08-12/11 东财移动端接口实测单位净值 (NAV 元)",
+  "holdings": [
+    { "symbol": "006260", "name": "汇添富红利增长混合C", "market": "CN", "currency": "CNY", "type": "etf", "quantity": 71.54, "avgCost": 173, "navYuan": 1.7811 },
+    { "symbol": "019261", "name": "富国恒生红利ETF联接C", "market": "CN", "currency": "CNY", "type": "etf", "quantity": 37.6, "avgCost": 123, "navYuan": 1.2267 },
+    { "symbol": "270042", "name": "广发纳斯达克100ETF联接(QDII)A", "market": "US", "currency": "CNY", "type": "etf", "quantity": 62.03, "avgCost": 825, "navYuan": 8.1894 },
+    { "symbol": "016816", "name": "兴业120天滚动持有债券A", "market": "CN", "currency": "CNY", "type": "etf", "quantity": 894.98, "avgCost": 112, "navYuan": 1.1219 },
+    { "symbol": "017641", "name": "摩根标普500指数(QDII)A", "market": "CN", "currency": "CNY", "type": "etf", "quantity": 364.64, "avgCost": 167, "navYuan": 1.7166 },
+    { "symbol": "017617", "name": "华泰柏瑞招享6个月持有期混合A", "market": "US", "currency": "CNY", "type": "etf", "quantity": 175.47, "avgCost": 114, "navYuan": 1.1402 },
+    { "symbol": "019161", "name": "博时悦楚纯债债券C", "market": "US", "currency": "CNY", "type": "etf", "quantity": 139.81, "avgCost": 108, "navYuan": 1.0778 },
+    { "symbol": "008163", "name": "南方红利低波50ETF联接A", "market": "CN", "currency": "CNY", "type": "etf", "quantity": 510.38, "avgCost": 103, "navYuan": 1.0346 },
+    { "symbol": "027748", "name": "易方达中证全指红利质量ETF联接C", "market": "CN", "currency": "CNY", "type": "etf", "quantity": 150.04, "avgCost": 100, "navYuan": 0.9995 },
+    { "symbol": "001235", "name": "中银国有企业债债券A", "market": "US", "currency": "CNY", "type": "etf", "quantity": 96.03, "avgCost": 129, "navYuan": 1.2979 },
+    { "symbol": "007028", "name": "易方达中证500ETF联接A", "market": "CN", "currency": "CNY", "type": "etf", "quantity": 76.98, "avgCost": 191, "navYuan": 1.9439 },
+    { "symbol": "027374", "name": "兴业恒生生物科技指数C", "market": "CN", "currency": "CNY", "type": "etf", "quantity": 200.19, "avgCost": 100, "navYuan": 1.0193 },
+    { "symbol": "016452", "name": "南方纳斯达克100指数(QDII)A", "market": "US", "currency": "CNY", "type": "etf", "quantity": 17.4, "avgCost": 230, "navYuan": 2.295 },
+    { "symbol": "040046", "name": "华安纳斯达克100ETF联接(QDII)A", "market": "US", "currency": "CNY", "type": "etf", "quantity": 18.17, "avgCost": 826, "navYuan": 8.237 },
+    { "symbol": "000834", "name": "大成纳斯达克100ETF联接(QDII)A", "market": "US", "currency": "CNY", "type": "etf", "quantity": 12.6, "avgCost": 635, "navYuan": 6.3307 },
+    { "symbol": "006479", "name": "广发纳斯达克100ETF联接(QDII)C", "market": "CN", "currency": "CNY", "type": "etf", "quantity": 62.61, "avgCost": 805, "navYuan": 8.0469 }
+  ]
+}

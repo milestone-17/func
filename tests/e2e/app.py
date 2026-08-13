@@ -9,12 +9,31 @@
 依赖: playwright + chromium
   pip install playwright && python -m playwright install chromium
 """
-import sys, os, time, signal, subprocess, urllib.request, traceback
+import sys, os, time, signal, subprocess, urllib.request, traceback, re
 from playwright.sync_api import sync_playwright
 
 BASE = "http://localhost:4173/func/"
 PORT = 4173
 SHOTS = os.environ.get("E2E_SHOTS", "/tmp/func-e2e-shots/")
+
+# 东财移动端基金批量接口的固定返回 (模拟真实响应结构, 供批量 JSONP 回填净值)
+FUND_NAV_FIXTURES = [
+    ("006260", "汇添富红利增长混合C", "1.7811"),
+    ("019261", "富国恒生红利ETF联接C", "1.2267"),
+]
+
+
+def _mock_fund_navs(route):
+    """东财移动端基金批量接口 → 用请求里的 callback 名回 JSONP (绕 CORS 后脚本注入)"""
+    m = re.search(r"callback=([^&]+)", route.request.url)
+    cb = m.group(1) if m else "jsonp"
+    datas = ",".join(
+        '{"FCODE":"%s","SHORTNAME":"%s","PDATE":"2026-08-12","NAV":"%s","GSZ":null}'
+        % (c, n, v)
+        for c, n, v in FUND_NAV_FIXTURES
+    )
+    body = f"{cb}({{\"Datas\":[{datas}],\"ErrCode\":0,\"Success\":true}});"
+    route.fulfill(status=200, content_type="application/javascript", body=body)
 
 
 def wait_for(url, timeout=40):
@@ -37,6 +56,8 @@ def run_tests():
         page = browser.new_page(viewport={"width": 390, "height": 844})
         page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
         page.on("pageerror", lambda e: page_errors.append(str(e)))
+        # 拦截东财基金批量接口 → 返回固定 JSONP, 使净值回填确定性可测
+        page.route("**/FundMNFInfo*", _mock_fund_navs)
 
         def ok(name, cond, detail=""):
             results.append((name, bool(cond), detail))
@@ -108,9 +129,32 @@ def run_tests():
             page.locator("button:has-text('标普500')").first.click()
             page.wait_for_timeout(400)
             ok("投资-标普500分类下隐藏苹果", page.locator("text=苹果").count() == 0)
-            page.locator("button:has-text('全部')").first.click()
+            # 全部 需锚定: header 的「拉取全部」也含"全部", 仅匹配分类筛选按钮 (文本以"全部"开头+计数)
+            page.locator("button", has_text=re.compile(r"^全部")).first.click()
             page.wait_for_timeout(300)
             ok("投资-一键自动分类按钮", page.locator("button:has-text('一键自动分类')").count() > 0)
+            # 中国场外基金 (6 位代码): 分类自动预填 → 保存 → 批量拉取回填净值
+            page.locator("button:has-text('新增')").click()
+            page.wait_for_selector(".sheet-panel", timeout=5000)
+            page.locator(".sheet-panel input[placeholder*='QQQ']").fill("006260")
+            page.locator(".sheet-panel input[placeholder*='ETF']").fill("汇添富红利增长混合C")
+            page.wait_for_timeout(300)  # 等名称/代码 watch 自动预填分类
+            ok("投资-基金分类自动预填红利", page.locator(".sheet-panel select").nth(1).input_value() == "dividend")
+            page.locator(".sheet-panel .amount-input input").fill("1.78")
+            page.locator(".sheet-panel input[placeholder='0']").fill("100")
+            page.locator(".sheet-panel button:has-text('保存')").click()
+            page.wait_for_timeout(900)
+            fund_card = page.locator("div.card", has_text="汇添富红利")
+            ok("投资-基金持仓显示", fund_card.count() > 0)
+            ok("投资-基金自动分类红利标签", fund_card.locator("span", has_text="红利").count() > 0)
+            page.locator("button:has-text('拉取全部')").click()
+            # 两段式: 基金批量先回填, 美股回落(最多~4s)后出汇总提示 → 轮询等「已更新」
+            price_cell = fund_card.locator("div.bg-surface2 .money").nth(2)
+            deadline = time.time() + 15
+            while time.time() < deadline and page.locator("text=/已更新/").count() == 0:
+                page.wait_for_timeout(300)
+            ok("投资-基金净值批量回填(1.78)", price_cell.inner_text() == "1.78")
+            ok("投资-批量拉取提示", page.locator("text=/已更新/").count() > 0)
         section("投资(建仓+分类)", s_portfolio)
 
         def s_dca():
@@ -139,6 +183,8 @@ def run_tests():
             shot("06-permanent.png")
             ok("永久-四类资产", page.locator("text=股票").count() > 0 and page.locator("text=黄金").count() > 0)
             ok("永久-组合总市值", page.locator("text=组合总市值").count() > 0)
+            total_text = page.locator("div.money.text-3xl").first.inner_text()
+            ok("永久-组合总市值非零(基金持仓计价)", total_text not in ("¥0.00", "¥0"), f"总市值={total_text}")
         section("永久组合", s_perm)
 
         def s_settings():
