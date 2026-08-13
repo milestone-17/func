@@ -44,6 +44,17 @@ def _mock_fund_navs(route):
     route.fulfill(status=200, content_type="application/javascript", body=body)
 
 
+def _mock_push2(route):
+    """东财 push2 单票现价接口 (fetchHoldingPrice 对批量接口未命中的 6 位代码的回落源)。
+
+    转换新建的基金 (如 008888) 不在 16 只 fixture 批量数据里 → 触发此回落请求。
+    CI 网络可达该服务器但被 CORS 拦截, 报错文案与本地网络层 `Failed to fetch`
+    不同, 会被「非预期错误」护栏误判为失败; 本地环境同样产生真实外呼。统一 mock:
+    返回固定 2.00 元, 与转换抽屉手动录入净值一致, e2e 完全封闭无外呼。"""
+    route.fulfill(status=200, content_type="application/json",
+                  body='{"data":{"f43":200},"rc":0,"rt":1,"code":0}')
+
+
 def _yuan_to_fen(y):
     """复刻 src/lib/money.ts yuanToFen 的字符串进位逻辑 (1.7811 → 178)"""
     s = repr(abs(y))
@@ -128,6 +139,8 @@ def run_tests():
         page.on("pageerror", lambda e: page_errors.append(str(e)))
         # 拦截东财基金批量接口 → 返回固定 JSONP, 使净值回填确定性可测
         page.route("**/FundMNFInfo*", _mock_fund_navs)
+        # 拦截东财 push2 单票现价接口 (批量未命中的 6 位代码回落源), 避免真实外呼/CORS 误报
+        page.route("**/api/qt/stock/get*", _mock_push2)
 
         def ok(name, cond, detail=""):
             results.append((name, bool(cond), detail))
