@@ -10,6 +10,20 @@ function sell(date: string, price: number, quantity: number, fee = 0): HoldingTx
 }
 
 describe('computePosition 结算感知持仓重建', () => {
+  it('有交易记录时以交易为准, 不叠加持仓种子 (修复数量翻倍)', () => {
+    // 持仓自带 quantity=10 与首笔买入 10 → 数量应为 10, 而非 20
+    const txns = [buy('2026-08-01', 100, 10)]
+    const pos = computePosition(txns, 1, '2026-08-10', { quantity: 10, avgCost: 100 })
+    expect(pos.quantity).toBe(10)
+    expect(pos.avgCost).toBe(100)
+  })
+
+  it('无交易记录时使用持仓种子 (存量兼容)', () => {
+    const pos = computePosition([], 1, '2026-08-10', { quantity: 10, avgCost: 100 })
+    expect(pos.quantity).toBe(10)
+    expect(pos.avgCost).toBe(100)
+  })
+
   it('全部已确认 → 与传统累加一致', () => {
     const pos = computePosition([buy('2026-08-01', 100, 10), buy('2026-08-02', 200, 5)], 1, '2026-08-10')
     expect(pos.quantity).toBe(15)

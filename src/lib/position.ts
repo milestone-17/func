@@ -27,9 +27,12 @@ export function computePosition(
   todayISO: string,
   initial: { quantity: number; avgCost: number } = { quantity: 0, avgCost: 0 }
 ): Position {
-  // 起点: 持仓自带的存量 (quantity + avgCost) 视为"建仓前已持有"
-  let qty = initial.quantity
-  let cost = Math.round(initial.avgCost * initial.quantity)
+  // 起点: 仅当该持仓没有任何交易记录时, 才把持仓自带的存量 (quantity + avgCost)
+  // 视为"建仓前已持有"的种子。凡有首笔交易的持仓一律以交易为准 —— 本应用表单创建
+  // 持仓必定同时写入首笔买入, 若再把 quantity 作种子叠加, 会与首笔交易重复计入而翻倍。
+  const hasTxns = txns.length > 0
+  let qty = hasTxns ? 0 : initial.quantity
+  let cost = hasTxns ? 0 : Math.round(initial.avgCost * initial.quantity)
   let pendingBuyFen = 0
   let pendingSellFen = 0
   let frozenShares = 0
