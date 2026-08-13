@@ -4,6 +4,9 @@ dist
 *.local
 coverage
 .env*
+# Python (tests/e2e 一次性脚本)
+__pycache__/
+*.pyc
 # vue-tsc -b 产出的构建中间文件
 *.tsbuildinfo
 vite.config.js
