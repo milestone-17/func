@@ -17,6 +17,7 @@ export interface Holding {
   avgCost: number  // 分
   currentPrice?: number | null  // 分
   currentPriceAt?: number | null
+  currentPriceIsEstimate?: boolean | null  // 现价是否为估算值 (基金盘中估值)
   notes?: string
   createdAt: Timestamp
   updatedAt: Timestamp

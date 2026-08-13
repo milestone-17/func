@@ -1,9 +1,25 @@
 import type { AssetType, HoldingForPerm, PermTarget } from '@/types/permanent'
 
+/** 持仓分类/类型 → 永久组合四类(股/债/现金/黄金) 的映射 */
+export function categoryToAssetType(category: string | undefined, type: string): AssetType {
+  const c = (category ?? 'other').toLowerCase()
+  if (c === 'nasdaq100' || c === 'sp500' || c === 'dividend') return 'stock'
+  if (c === 'bond') return 'bond'
+  // 「其他」或缺省分类 → 按持仓原始 type
+  switch (type) {
+    case 'stock': return 'stock'
+    case 'bond': return 'bond'
+    case 'cash': return 'cash'
+    case 'gold': return 'gold'
+    default: return 'stock' // etf/crypto 等权益类默认归股票
+  }
+}
+
 export function aggregateByType(holdings: HoldingForPerm[]): Record<AssetType, number> {
   const init: Record<AssetType, number> = { stock: 0, bond: 0, cash: 0, gold: 0 }
   return holdings.reduce((acc, h) => {
-    acc[h.type] = (acc[h.type] || 0) + h.marketValueCNY
+    const t = categoryToAssetType(h.category, h.type)
+    acc[t] = (acc[t] || 0) + h.marketValueCNY
     return acc
   }, init)
 }

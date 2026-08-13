@@ -95,21 +95,41 @@ export async function fetchLiveQuotes(symbol: string = '^NDX'): Promise<{ date: 
   return null
 }
 
-/** 按市场路由拉取单只持仓最新价 (元)。失败返回 null, 绝不抛出。 */
-export async function fetchHoldingPrice(market: string, symbol: string): Promise<number | null> {
-  if (market === 'US') return fetchLiveLatestPrice(symbol)
-  if (market === 'CN') {
+/** 持仓现价结果: price(元) + 是否估算值 */
+export interface HoldingPrice {
+  price: number
+  isEstimate: boolean
+}
+
+/**
+ * 按代码形态路由拉取单只持仓最新价 (元)。失败返回 null, 绝不抛出。
+ * - 6 位数字代码: 中国基金/股票 → 先试基金 JSONP(天天基金), 回落东方财富股票接口
+ * - 字母代码(美股/ETF 如 QQQ): Yahoo 代理链
+ * 任意新增代码自动适配对应源。
+ */
+export async function fetchHoldingPrice(market: string, symbol: string): Promise<HoldingPrice | null> {
+  // 6 位数字: 基金 JSONP 优先, 回落股票接口
+  if (/^\d{6}$/.test(symbol)) {
+    const { fetchFundQuote } = await import('@/lib/fundQuote')
+    const fund = await fetchFundQuote(symbol)
+    if (fund && fund.nav > 0) return { price: fund.nav, isEstimate: fund.isEstimate }
+    // 回落东方财富股票接口 (尽力; 基金接口对股票代码返回空时用)
     try {
       const secid = symbol.startsWith('6') ? `1.${symbol}` : `0.${symbol}`
       const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f43`
       const res = await fetch(url, { cache: 'no-cache' })
-      if (!res.ok) return null
-      const j = await res.json()
-      const v = j?.data?.f43
-      return typeof v === 'number' && v > 0 ? v / 100 : null
-    } catch {
-      return null
-    }
+      if (res.ok) {
+        const j = await res.json()
+        const v = j?.data?.f43
+        if (typeof v === 'number' && v > 0) return { price: v / 100, isEstimate: false }
+      }
+    } catch { /* 尽力, 失败返回 null */ }
+    return null
+  }
+  // 字母代码: 美股/ETF → Yahoo 代理链
+  if (market === 'US' || /[a-zA-Z]/.test(symbol)) {
+    const p = await fetchLiveLatestPrice(symbol)
+    return p != null && p > 0 ? { price: p, isEstimate: false } : null
   }
   // HK 等暂不支持自动拉取, 返回 null (调用方保留原值)
   return null

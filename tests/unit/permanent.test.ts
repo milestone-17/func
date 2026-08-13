@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { aggregateByType, computePermanentDeviation } from '@/lib/permanent'
+import { aggregateByType, computePermanentDeviation, categoryToAssetType } from '@/lib/permanent'
 
 const holdings = [
   { type: 'stock', marketValueCNY: 250000 },
@@ -78,5 +78,55 @@ describe('permanent portfolio', () => {
     expect(r.deviations.find(d => d.assetType === 'stock')!.actualPercent).toBe(80)
     expect(r.alerts.some(a => a.assetType === 'cash')).toBe(true)
     expect(r.alerts.some(a => a.assetType === 'gold')).toBe(true)
+  })
+})
+
+describe('categoryToAssetType (分类→四类映射)', () => {
+  it('红利/纳指/标普 → 股票 (即便 type 是 etf)', () => {
+    expect(categoryToAssetType('dividend', 'etf')).toBe('stock')
+    expect(categoryToAssetType('nasdaq100', 'etf')).toBe('stock')
+    expect(categoryToAssetType('sp500', 'etf')).toBe('stock')
+  })
+  it('债券分类 → 债券', () => {
+    expect(categoryToAssetType('bond', 'etf')).toBe('bond')
+  })
+  it('其他/缺省分类按 type: etf→股票, bond→债券, cash/gold 直通', () => {
+    expect(categoryToAssetType('other', 'etf')).toBe('stock')
+    expect(categoryToAssetType('other', 'bond')).toBe('bond')
+    expect(categoryToAssetType('other', 'cash')).toBe('cash')
+    expect(categoryToAssetType('other', 'gold')).toBe('gold')
+    expect(categoryToAssetType(undefined, 'etf')).toBe('stock')
+  })
+})
+
+describe('aggregateByType (场外基金按 category 计入)', () => {
+  it('红利基金+其他ETF 计入股票, 债券基金计入债券', () => {
+    const h = [
+      { category: 'dividend', type: 'etf', marketValueCNY: 300000 },
+      { category: 'bond', type: 'etf', marketValueCNY: 100000 },
+      { category: 'other', type: 'etf', marketValueCNY: 50000 }
+    ] as any[]
+    const r = aggregateByType(h)
+    expect(r.stock).toBe(350000) // dividend(300000) + other-etf(50000)
+    expect(r.bond).toBe(100000)
+  })
+})
+
+describe('computePermanentDeviation (含基金持仓)', () => {
+  it('红利基金计入股票, 实际占比正确', () => {
+    const h = [
+      { category: 'dividend', type: 'etf', marketValueCNY: 750000 },
+      { category: 'bond', type: 'etf', marketValueCNY: 250000 }
+    ] as any[]
+    const tg = [
+      { assetType: 'stock', targetPercent: 75 },
+      { assetType: 'bond', targetPercent: 25 },
+      { assetType: 'cash', targetPercent: 0 },
+      { assetType: 'gold', targetPercent: 0 }
+    ] as any[]
+    const r = computePermanentDeviation(h, tg, 5)
+    expect(r.total).toBe(1000000)
+    expect(r.deviations.find(d => d.assetType === 'stock')!.actualPercent).toBe(75)
+    expect(r.deviations.find(d => d.assetType === 'stock')!.deviation).toBe(0)
   })
 })

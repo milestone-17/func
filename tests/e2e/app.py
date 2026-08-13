@@ -110,6 +110,7 @@ def run_tests():
             ok("投资-标普500分类下隐藏苹果", page.locator("text=苹果").count() == 0)
             page.locator("button:has-text('全部')").first.click()
             page.wait_for_timeout(300)
+            ok("投资-一键自动分类按钮", page.locator("button:has-text('一键自动分类')").count() > 0)
         section("投资(建仓+分类)", s_portfolio)
 
         def s_dca():

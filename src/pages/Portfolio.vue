@@ -41,6 +41,11 @@
           <span class="ml-1 opacity-70">{{ categoryCount(c.key) }}</span>
         </button>
       </div>
+      <div class="flex justify-end">
+        <button @click="reclassify" :disabled="reclassifying" class="text-[11px] text-brand font-medium">
+          {{ reclassifying ? '分类中…' : '一键自动分类(未分类)' }}
+        </button>
+      </div>
 
       <!-- 空状态 -->
       <div v-if="filteredHoldings.length === 0" class="card card-pad text-center py-12">
@@ -77,7 +82,7 @@
             <div class="money text-sm font-semibold">{{ fenToYuan(h.avgCost).toFixed(2) }}</div>
           </div>
           <div class="rounded-lg bg-surface2 py-1.5">
-            <div class="text-[10px] text-ink3">现价</div>
+            <div class="text-[10px] text-ink3">现价<span v-if="h.currentPriceIsEstimate" class="ml-0.5 text-amber-500">·估</span></div>
             <div class="money text-sm font-semibold">{{ h.currentPrice != null ? fenToYuan(h.currentPrice).toFixed(2) : '—' }}</div>
           </div>
         </div>
@@ -170,13 +175,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import AmountInput from '@/components/AmountInput.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { usePortfolioStore } from '@/stores/portfolio'
 import { useSettingsStore } from '@/stores/settings'
 import { formatYuan, fenToYuan, yuanToFen } from '@/lib/money'
+import { inferCategory } from '@/lib/category'
 import type { Market, Currency, HoldingType, HoldingCategory } from '@/types/portfolio'
 
 const portfolio = usePortfolioStore()
@@ -257,10 +263,10 @@ async function refreshPrice(h: any) {
   refreshingId.value = h.id
   try {
     const { fetchHoldingPrice } = await import('@/lib/yahoo')
-    const price = await fetchHoldingPrice(h.market, h.symbol)
-    if (price != null && price > 0) {
-      await portfolio.updatePrice(h.id, yuanToFen(price))
-      priceDrafts.value[h.id] = price
+    const r = await fetchHoldingPrice(h.market, h.symbol)
+    if (r && r.price > 0) {
+      await portfolio.updatePrice(h.id, yuanToFen(r.price), r.isEstimate)
+      priceDrafts.value[h.id] = r.price
     } else {
       alert('该标的暂不支持自动拉取或拉取失败,请手动填入现价')
     }
@@ -283,14 +289,36 @@ const form = ref<{ symbol: string; name: string; market: Market; type: HoldingTy
 const canSave = computed(() => !!form.value.symbol && !!form.value.name && form.value.avgCost != null && form.value.quantity > 0)
 
 function onCategoryChange() {
+  categoryTouched.value = true
+  applyCategoryTypeDefault()
+}
+
+/** 用户未手动选分类时, 按名称/代码自动推断并预填 */
+const categoryTouched = ref(false)
+function applyCategoryTypeDefault() {
   const c = form.value.category
   if (c === 'bond') form.value.type = 'bond'
   else if (c === 'nasdaq100' || c === 'sp500' || c === 'dividend') form.value.type = 'stock'
 }
+watch(() => [form.value.name, form.value.symbol], () => {
+  if (creating.value && !categoryTouched.value) {
+    form.value.category = inferCategory(form.value.name, form.value.symbol)
+    applyCategoryTypeDefault()
+  }
+})
 
 function openCreate() {
   form.value = { symbol: '', name: '', market: 'US', type: 'etf', category: 'other', currency: 'USD', avgCost: null, quantity: 0 }
+  categoryTouched.value = false
   creating.value = true
+}
+
+const reclassifying = ref(false)
+async function reclassify() {
+  reclassifying.value = true
+  const n = await portfolio.reclassifyAll('unclassified')
+  reclassifying.value = false
+  syncMsg.value = n > 0 ? `已自动分类 ${n} 只持仓` : '没有需要分类的「其他」持仓'
 }
 
 async function save() {

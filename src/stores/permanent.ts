@@ -26,8 +26,8 @@ export const usePermanentStore = defineStore('permanent', () => {
     const settings = useSettingsStore()
     const threshold = settings.settings?.permanentThreshold ?? 5
     const holdings: HoldingForPerm[] = portfolio.holdings
-      .filter(h => h.marketValueCNY != null && (h.type === 'stock' || h.type === 'bond' || h.type === 'cash' || h.type === 'gold'))
-      .map(h => ({ type: h.type as AssetType, marketValueCNY: h.marketValueCNY! }))
+      .filter(h => h.marketValueCNY != null && h.marketValueCNY > 0)
+      .map(h => ({ category: h.category, type: h.type, marketValueCNY: h.marketValueCNY! }))
     return computePermanentDeviation(holdings, targets.value, threshold)
   })
 

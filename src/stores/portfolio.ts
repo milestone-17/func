@@ -5,6 +5,7 @@ import { holdingTxnRepo } from '@/repos/holdingTxnRepo'
 import { convertCurrency } from '@/lib/currency'
 import { fetchHoldingPrice } from '@/lib/yahoo'
 import { yuanToFen } from '@/lib/money'
+import { inferCategory } from '@/lib/category'
 import { useSettingsStore } from '@/stores/settings'
 import type { Holding, HoldingTxn, Currency, Market, HoldingCategory } from '@/types/portfolio'
 
@@ -19,6 +20,7 @@ export interface HoldingView {
   quantity: number
   avgCost: number
   currentPrice: number | null
+  currentPriceIsEstimate: boolean
   marketValueOriginal: number | null
   marketValueCNY: number | null
   totalCost: number
@@ -53,7 +55,7 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       out.push({
         id: h.id, symbol: h.symbol, name: h.name,
         market: h.market, currency: h.currency, type: h.type, category: h.category ?? 'other',
-        quantity, avgCost, currentPrice: price,
+        quantity, avgCost, currentPrice: price, currentPriceIsEstimate: h.currentPriceIsEstimate ?? false,
         marketValueOriginal, marketValueCNY, totalCost, unrealized, unrealizedPct
       })
     }
@@ -67,17 +69,18 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     return h
   }
 
-  async function updatePrice(id: string, priceFen: number) {
+  async function updatePrice(id: string, priceFen: number, isEstimate = false) {
     const h = await holdingRepo.get(id)
     if (!h) return
     h.currentPrice = priceFen
     h.currentPriceAt = Date.now()
+    h.currentPriceIsEstimate = isEstimate
     await holdingRepo.put(h)
     await refresh()
   }
 
   /**
-   * 拉取全部持仓最新价。逐只按市场路由拉取, 成功更新现价;
+   * 拉取全部持仓最新价。逐只按代码形态路由拉取, 成功更新现价与估值标记;
    * 失败 (含接口不可用) 保留原值, 仅累计到 failed 列表, 绝不清空。
    */
   async function refreshAllPrices(): Promise<{ updated: number; failed: { id: string; name: string }[] }> {
@@ -86,10 +89,11 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     let updated = 0
     for (const h of list) {
       try {
-        const price = await fetchHoldingPrice(h.market, h.symbol)
-        if (price != null && price > 0) {
-          h.currentPrice = yuanToFen(price)
+        const r = await fetchHoldingPrice(h.market, h.symbol)
+        if (r && r.price > 0) {
+          h.currentPrice = yuanToFen(r.price)
           h.currentPriceAt = Date.now()
+          h.currentPriceIsEstimate = r.isEstimate
           await holdingRepo.put(h)
           updated++
         } else {
@@ -106,6 +110,27 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   async function addTxn(input: Omit<HoldingTxn, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) {
     await holdingTxnRepo.add(input)
     await refresh()
+  }
+
+  /**
+   * 按名称/代码批量重新自动分类。
+   * scope='unclassified' 仅重算「其他」(默认, 不覆盖用户手动设置); 'all' 重算全部。
+   * 返回被改变的持仓数。
+   */
+  async function reclassifyAll(scope: 'unclassified' | 'all' = 'unclassified'): Promise<number> {
+    const list = await holdingRepo.list()
+    let n = 0
+    for (const h of list) {
+      if (scope === 'unclassified' && h.category && h.category !== 'other') continue
+      const next = inferCategory(h.name, h.symbol)
+      if (next !== (h.category ?? 'other')) {
+        h.category = next
+        await holdingRepo.put(h)
+        n++
+      }
+    }
+    await refresh()
+    return n
   }
 
   const totalMarketValueCNY = computed(() =>
@@ -126,5 +151,5 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     return map
   })
 
-  return { holdings, loaded, refresh, addHolding, updatePrice, refreshAllPrices, addTxn, totalMarketValueCNY, totalCost, totalUnrealized, byCategory }
+  return { holdings, loaded, refresh, addHolding, updatePrice, refreshAllPrices, addTxn, reclassifyAll, totalMarketValueCNY, totalCost, totalUnrealized, byCategory }
 })
