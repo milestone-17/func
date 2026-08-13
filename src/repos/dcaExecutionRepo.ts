@@ -25,6 +25,13 @@ export const dcaExecutionRepo = {
     return all.filter(e => e.month === month && !e.deletedAt)
       .sort((a, b) => a.weekIndex - b.weekIndex || a.date.localeCompare(b.date))
   },
+  /** 按 configId+month+weekIndex 查重, 用于周度自动执行幂等判定 */
+  async findBySlot(configId: string, month: string, weekIndex: number): Promise<DCAExecution | undefined> {
+    const db = await openDb()
+    const all = await db.getAll('dcaExecutions') as DCAExecution[]
+    db.close()
+    return all.find(e => e.configId === configId && e.month === month && e.weekIndex === weekIndex && !e.deletedAt)
+  },
   async listAll(): Promise<DCAExecution[]> {
     const db = await openDb()
     const all = await db.getAll('dcaExecutions') as DCAExecution[]

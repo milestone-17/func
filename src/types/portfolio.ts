@@ -15,6 +15,7 @@ export interface Holding {
   currency: Currency
   quantity: number
   avgCost: number  // 分
+  settleDays?: number | null  // 结算天数: 1=T+1, 2=T+2; 缺省按基金=1/其他=0 推算
   currentPrice?: number | null  // 分
   currentPriceAt?: number | null
   currentPriceIsEstimate?: boolean | null  // 现价是否为估算值 (基金盘中估值)

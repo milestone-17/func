@@ -3,12 +3,24 @@ import { ref, computed } from 'vue'
 import { dcaConfigRepo } from '@/repos/dcaConfigRepo'
 import { indexDataRepo } from '@/repos/indexDataRepo'
 import { dcaExecutionRepo } from '@/repos/dcaExecutionRepo'
+import { holdingRepo } from '@/repos/holdingRepo'
+import { holdingTxnRepo } from '@/repos/holdingTxnRepo'
 import { loadBundledQuotes, fetchLiveQuotes, barsToIndexData } from '@/lib/yahoo'
 import { computeMA, computeMA250 } from '@/lib/ma'
 import { computeDeviation } from '@/lib/deviation'
 import { computeWeekSuggestion, type SuggestionResult } from '@/lib/dca'
 import { lookupBucket } from '@/lib/table'
+import { weekOfMonth, monthOf } from '@/lib/dcaWeek'
+import { usePortfolioStore } from '@/stores/portfolio'
 import type { DCAConfig, IndexData, BucketResult } from '@/types/dca'
+
+/** 测试注入点: 通过 setTodayForTests 覆盖 todayISO 返回值 (避免 fake timers 破坏 IndexedDB) */
+let _todayOverride: string | null = null
+export function setDcaTodayForTests(d: string | null) { _todayOverride = d }
+function todayISO(): string {
+  if (_todayOverride) return _todayOverride
+  return new Date().toISOString().slice(0, 10)
+}
 
 /** 定投支持的标的 (均按均线偏离策略) */
 export const DCA_SYMBOLS = ['^NDX', '^GSPC'] as const
@@ -139,7 +151,7 @@ export const useDcaStore = defineStore('dca', () => {
     const symbol = activeSymbol.value
     const data: IndexData = {
       symbol,
-      date: new Date().toISOString().slice(0, 10),
+      date: todayISO(),
       close: lastCloseInput,
       ma250: computeMA250(closes),
       source: 'manual',
@@ -182,10 +194,11 @@ export const useDcaStore = defineStore('dca', () => {
     if (!st?.config) return
     const close = lastCloseOf(symbol)
     if (close == null) return
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayISO()
     const month = today.slice(0, 7)
     const sug = st.suggestions[weekIndex]
     const plannedAmount = st.config.weeklySplits[weekIndex - 1]
+    const finalPrice = actualPrice ?? close
     await dcaExecutionRepo.add({
       configId: st.config.id,
       month,
@@ -196,14 +209,70 @@ export const useDcaStore = defineStore('dca', () => {
       suggestedAmount: sug?.suggestedAmount ?? plannedAmount,
       executedAmount,
       deviationPct: deviationOf(symbol) ?? 0,
-      priceAtBuy: actualPrice ?? close,
-      sharesBought: actualPrice != null && actualPrice > 0 ? executedAmount / (actualPrice * 100) : 0
+      priceAtBuy: finalPrice,
+      sharesBought: executedAmount / (finalPrice * 100)
     })
+    // 目标基金存在 → 生成 buy 交易 (金额按 executedAmount, 数量按 finalPrice)
+    const targetId = st.config.targetHoldingId
+    if (targetId) {
+      const target = await holdingRepo.get(targetId)
+      if (target && executedAmount > 0 && finalPrice > 0) {
+        // 优先用持仓自带的现价, 没有则用指数收盘价兜底
+        const priceFen = target.currentPrice && target.currentPrice > 0
+          ? target.currentPrice
+          : Math.round(finalPrice * 100)
+        if (priceFen > 0) {
+          const qty = executedAmount / 100 / (priceFen / 100) // 元/元 = 份
+          await holdingTxnRepo.add({
+            holdingId: targetId,
+            side: 'buy',
+            date: today,
+            price: priceFen,
+            quantity: qty,
+            fee: 0,
+            note: `定投自动执行·W${weekIndex} ${st.config.symbol}`
+          })
+          const portfolio = usePortfolioStore()
+          await portfolio.refresh()
+        }
+      }
+    }
+  }
+
+  /**
+   * 遍历全部 DCA 标的: 当 (month, weekIndex) 槽位无执行记录时按建议金额自动记账并落 buy 交易。
+   * 幂等: 同槽位重复调用不会重复落账 (依赖 dcaExecutionRepo.findBySlot)。
+   * 浏览器关闭/跨多日不会回溯, 仅在 onMounted 触发 (无后台服务)。
+   * 返回成功/跳过的执行明细供上层 toast。
+   */
+  async function runAutoExecutions(today?: string): Promise<{ executed: { symbol: string; weekIndex: 1 | 2 | 3 | 4; amount: number }[]; skipped: { symbol: string; weekIndex: 1 | 2 | 3 | 4; reason: string }[] }> {
+    const todayStr = today ?? todayISO()
+    const month = monthOf(todayStr)
+    const wk = weekOfMonth(todayStr)
+    const executed: { symbol: string; weekIndex: 1 | 2 | 3 | 4; amount: number }[] = []
+    const skipped: { symbol: string; weekIndex: 1 | 2 | 3 | 4; reason: string }[] = []
+    for (const symbol of DCA_SYMBOLS) {
+      const st = states.value[symbol]
+      const cfg = st?.config
+      if (!cfg) { skipped.push({ symbol, weekIndex: wk, reason: 'no-config' }); continue }
+      if (!cfg.targetHoldingId) { skipped.push({ symbol, weekIndex: wk, reason: 'no-target' }); continue }
+      const existing = await dcaExecutionRepo.findBySlot(cfg.id, month, wk)
+      if (existing) { skipped.push({ symbol, weekIndex: wk, reason: 'already-executed' }); continue }
+      const sug = st.suggestions[wk]
+      if (!sug || !sug.suggestedAmount || sug.suggestedAmount <= 0) {
+        skipped.push({ symbol, weekIndex: wk, reason: 'no-suggestion' }); continue
+      }
+      // 切到 active symbol 让 recordExecution 用正确的 config
+      activeSymbol.value = symbol
+      await recordExecution(wk, sug.suggestedAmount)
+      executed.push({ symbol, weekIndex: wk, amount: sug.suggestedAmount })
+    }
+    return { executed, skipped }
   }
 
   return {
     activeSymbol, states,
     config, series, ma120, ma180, ma250, lastClose, deviationPct, bucket, suggestions, lastSyncAt, syncError, dataSource,
-    setActive, load, saveConfig, syncIndex, manualSetIndex, recomputeSymbol, recordExecution
+    setActive, load, saveConfig, syncIndex, manualSetIndex, recomputeSymbol, recordExecution, runAutoExecutions
   }
 })

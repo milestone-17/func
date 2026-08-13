@@ -13,6 +13,8 @@ export interface DCAConfig {
   monthlyBudget: number  // 分
   weeklySplits: [number, number, number, number]  // 分
   deviationAlertPercent: number
+  /** 自动执行的目标持仓 id; 存在时 weeklyExecution 会按目标基金净值生成 buy 交易 */
+  targetHoldingId?: ID | null
   createdAt: Timestamp
   updatedAt: Timestamp
   deletedAt?: Timestamp | null

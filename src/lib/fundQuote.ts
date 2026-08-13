@@ -153,3 +153,34 @@ export async function fetchFundQuote(code: string, timeout = 8000): Promise<Fund
   const map = await fetchFundNavs([code], timeout)
   return map.get(code) ?? null
 }
+
+export interface NavTrendPoint { date: string; nav: number }
+
+/** 解析 pingzhongdata 的 Data_netWorthTrend 完整历史 → [{date, nav}] */
+export function parsePingzhongDataFullTrend(value: unknown): NavTrendPoint[] {
+  if (!Array.isArray(value) || value.length === 0) return []
+  const out: NavTrendPoint[] = []
+  for (const r of value) {
+    if (!r || typeof r !== 'object') continue
+    const obj = r as { x?: unknown; y?: unknown }
+    const x = Number(obj.x)
+    const y = Number(obj.y)
+    if (!Number.isFinite(x) || !Number.isFinite(y) || y <= 0) continue
+    const d = new Date(x)
+    if (Number.isNaN(d.getTime())) continue
+    out.push({
+      date: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`,
+      nav: Math.round(y * 10000) / 10000
+    })
+  }
+  return out
+}
+
+/** 拉取基金近 N 天净值历史 (用于详情页走势图); 失败返回空数组 */
+export async function fetchFundNavTrend(code: string, timeout = 12000): Promise<NavTrendPoint[]> {
+  if (!/^\d{6}$/.test(code)) return []
+  const ok = await loadPlainScript(PINGZHONG_API(code), timeout)
+  if (!ok) return []
+  const w = window as unknown as { Data_netWorthTrend?: unknown }
+  return parsePingzhongDataFullTrend(w.Data_netWorthTrend)
+}

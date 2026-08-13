@@ -157,6 +157,99 @@ def run_tests():
             ok("投资-批量拉取提示", page.locator("text=/已更新/").count() > 0)
         section("投资(建仓+分类)", s_portfolio)
 
+        def s_trading():
+            # 进入投资页 (用现有"汇添富红利"基金卡验证加仓/减仓/转换/详情/已清仓)
+            page.locator("a:has-text('投资')").first.click()
+            page.wait_for_timeout(500)
+            fund_card = page.locator("div.card", has_text="汇添富红利").first
+            # ---- 1. 详情页打开 ----
+            fund_card.locator("button:has-text('汇添富红利')").first.click()
+            page.wait_for_url(re.compile(r"/holding/"), timeout=5000)
+            page.wait_for_timeout(400)
+            ok("详情-顶部名称", page.locator("h2", has_text="汇添富红利").count() > 0)
+            ok("详情-基金代码", page.locator("text=006260").count() > 0)
+            ok("详情-T+1 标记", page.locator("text=T+1").count() > 0)
+            ok("详情-净值走势标题", page.locator("text=净值走势").count() > 0)
+            ok("详情-交易记录区", page.locator("text=/交易记录/").count() > 0)
+            shot("09-detail.png")
+
+            # ---- 2. 详情页底部操作栏 → 加仓 ----
+            page.locator("nav.fixed button", has_text="加仓").first.click()
+            page.wait_for_url(re.compile(r"action=add"), timeout=5000)
+            page.wait_for_timeout(400)
+            # 自动打开投资页加仓抽屉
+            ok("加仓-抽屉打开", page.locator(".sheet-panel h3", has_text="加仓").count() > 0)
+            ok("加仓-结算 T+1 显示", page.locator(".sheet-panel", has_text="T+1").count() > 0)
+            # 按金额 100 元
+            inputs = page.locator(".sheet-panel input[type='number']")
+            inputs.first.fill("100")
+            page.wait_for_timeout(200)
+            ok("加仓-预计份额预览", page.locator(".sheet-panel .bg-surface2 .money", has_text=re.compile(r"^\d")).count() > 0)
+            page.locator(".sheet-panel button:has-text('确认')").click()
+            page.wait_for_timeout(700)
+            # 加仓后回到投资页, 持有份数应变化; 卡片里的"持有 X 份"刷新
+            ok("加仓-提交后无残留抽屉", page.locator(".sheet-panel").count() == 0)
+
+            # ---- 3. 减仓 (按金额 50) ----
+            # 通过详情页跳回带 query 的方式打开, 与生产路径一致
+            page.locator("div.card", has_text="汇添富红利").first.locator("button:has-text('汇添富红利')").first.click()
+            page.wait_for_url(re.compile(r"/holding/"), timeout=5000)
+            page.wait_for_timeout(800)  # 等 onMounted → refresh 完成
+            page.locator("nav.fixed button", has_text="减仓").first.click()
+            page.wait_for_url(re.compile(r"action=reduce"), timeout=5000)
+            page.wait_for_timeout(400)
+            ok("减仓-抽屉打开", page.locator(".sheet-panel h3", has_text="减仓").count() > 0)
+            # 默认按金额, 卖出 50 元
+            page.locator(".sheet-panel input[type='number']").first.fill("50")
+            page.wait_for_timeout(150)
+            page.locator(".sheet-panel button:has-text('确认')").click()
+            page.wait_for_timeout(700)
+            if page.locator(".sheet-panel").count() != 0:
+                shot("reduce-error.png")
+                err = page.locator(".sheet-panel .text-neg").first.inner_text() if page.locator(".sheet-panel .text-neg").count() > 0 else "(no error msg)"
+                ok("减仓-提交完成", False, f"抽屉未关闭, 错误: {err}")
+            else:
+                ok("减仓-提交完成", True)
+
+            # ---- 4. 加仓第二次 (验证多次加仓不冲突) ----
+            page.locator("div.card", has_text="汇添富红利").first.locator("button:has-text('汇添富红利')").first.click()
+            page.wait_for_url(re.compile(r"/holding/"), timeout=5000)
+            page.wait_for_timeout(400)
+            page.locator("nav.fixed button", has_text="加仓").first.click()
+            page.wait_for_url(re.compile(r"action=add"), timeout=5000)
+            page.wait_for_timeout(400)
+            page.locator(".sheet-panel input[type='number']").first.fill("30")
+            page.wait_for_timeout(150)
+            page.locator(".sheet-panel button:has-text('确认')").click()
+            page.wait_for_timeout(700)
+            ok("加仓-二次提交完成", page.locator(".sheet-panel").count() == 0)
+
+            # ---- 5. 转换: 卖出「苹果」(AAPL) 全部 → 转入新基金 006479 ----
+            apple_card = page.locator("div.card", has_text="苹果").first
+            apple_card.locator("button:has-text('⇄ 转换')").first.click()
+            page.wait_for_timeout(400)
+            ok("转换-抽屉打开", page.locator(".sheet-panel h3", has_text="转换").count() > 0)
+            # 默认 mode=all
+            page.locator(".sheet-panel input[placeholder*='006260']").fill("006479")
+            page.locator(".sheet-panel input[placeholder*='易方达']").fill("易方达中证500联接A")
+            page.locator(".sheet-panel input[placeholder*='0.0000']").fill("1.50")
+            page.wait_for_timeout(300)
+            ok("转换-转出金额预览", page.locator(".sheet-panel .bg-surface2 .money").count() >= 2)
+            page.locator(".sheet-panel button:has-text('确认转换')").click()
+            page.wait_for_timeout(800)
+            ok("转换-完成后抽屉关闭", page.locator(".sheet-panel").count() == 0)
+            # 自动建仓 → 卡片应出现
+            new_card = page.locator("div.card", has_text="易方达中证500")
+            ok("转换-新基金自动建仓", new_card.count() > 0)
+            shot("10-after-convert.png")
+
+            # ---- 6. 详情页可打开新基金 (验证路由 + 走势空态/数据) ----
+            new_card.first.locator("button:has-text('易方达中证500')").first.click()
+            page.wait_for_url(re.compile(r"/holding/"), timeout=5000)
+            page.wait_for_timeout(300)
+            ok("详情-新基金页可访问", page.locator("h2", has_text="易方达中证500").count() > 0)
+        section("交易(加仓/减仓/转换/详情)", s_trading)
+
         def s_dca():
             page.locator("a:has-text('定投')").first.click()
             page.wait_for_timeout(600)

@@ -6,8 +6,32 @@ import { convertCurrency } from '@/lib/currency'
 import { fetchHoldingPrices } from '@/lib/yahoo'
 import { yuanToFen } from '@/lib/money'
 import { inferCategory } from '@/lib/category'
+import { computePosition, settleDaysOf } from '@/lib/position'
+import { suggestSettleDays, isSettled } from '@/lib/settlement'
+import { planConversion, type ConvertPlan } from '@/lib/conversion'
 import { useSettingsStore } from '@/stores/settings'
 import type { Holding, HoldingTxn, Currency, Market, HoldingCategory } from '@/types/portfolio'
+
+function todayISO(): string {
+  if (_todayOverride) return _todayOverride
+  return new Date().toISOString().slice(0, 10)
+}
+
+/** 测试注入点: 通过 setTodayForTests 覆盖 todayISO 返回值 */
+let _todayOverride: string | null = null
+export function setTodayForTests(d: string | null) {
+  _todayOverride = d
+}
+
+/** 交易结果: ok=true 返回本次份额; ok=false 返回原因 */
+export type TradeResult =
+  | { ok: true; quantity: number; pending: boolean }
+  | { ok: false; reason: 'no-price' | 'invalid' | 'exceeds-held' | 'not-found' | 'amount-exceeds' }
+
+/** 转换结果: 成功返回两侧交易参数 + 时间线; 失败返回原因 */
+export type ConvertResult =
+  | { ok: true; plan: ConvertPlan; sourceHoldingId: string; targetHoldingId: string; targetCreated: boolean }
+  | { ok: false; reason: 'no-price' | 'invalid' | 'exceeds-held' | 'not-found' | 'same-target' | 'no-target-price' | 'amount-exceeds' }
 
 export interface HoldingView {
   id: string
@@ -19,8 +43,13 @@ export interface HoldingView {
   category: HoldingCategory
   quantity: number
   avgCost: number
+  settleDays: number
   currentPrice: number | null
   currentPriceIsEstimate: boolean
+  pendingBuyFen: number
+  pendingSellFen: number
+  frozenShares: number
+  isClosed: boolean
   marketValueOriginal: number | null
   marketValueCNY: number | null
   totalCost: number
@@ -46,7 +75,10 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     }
     const out: HoldingView[] = []
     for (const h of list) {
-      const { quantity, avgCost } = await holdingTxnRepo.computeAvgCost(h.id)
+      const txns = await holdingTxnRepo.listByHolding(h.id)
+      const settleDays = settleDaysOf(h)
+      const pos = computePosition(txns, settleDays, todayISO(), { quantity: h.quantity || 0, avgCost: h.avgCost || 0 })
+      const { quantity, avgCost } = pos
       const totalCost = Math.round(quantity * avgCost)
       const rate = settings.settings?.usdCnyRate || 7.2
       const price = h.currentPrice ?? null
@@ -63,7 +95,10 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       out.push({
         id: h.id, symbol: h.symbol, name: h.name,
         market: h.market, currency: h.currency, type: h.type, category: h.category ?? 'other',
-        quantity, avgCost, currentPrice: price, currentPriceIsEstimate: h.currentPriceIsEstimate ?? false,
+        quantity, avgCost, settleDays,
+        currentPrice: price, currentPriceIsEstimate: h.currentPriceIsEstimate ?? false,
+        pendingBuyFen: pos.pendingBuyFen, pendingSellFen: pos.pendingSellFen, frozenShares: pos.frozenShares,
+        isClosed: quantity === 0 && txns.length > 0,
         marketValueOriginal, marketValueCNY, totalCost, unrealized, unrealizedPct
       })
     }
@@ -72,7 +107,11 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   }
 
   async function addHolding(input: Omit<Holding, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>): Promise<Holding> {
-    const h = await holdingRepo.add(input)
+    // 新建基金/持仓默认结算天数: 名称含跨境关键词 → T+2, 其余基金 → T+1, 非基金即时(0)
+    const settleDays = input.settleDays != null && input.settleDays > 0
+      ? input.settleDays
+      : (/^\d{6}$/.test(input.symbol) || input.market === 'CN') ? suggestSettleDays(input.name) : 0
+    const h = await holdingRepo.add({ ...input, settleDays })
     await refresh()
     return h
   }
@@ -149,6 +188,164 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   }
 
   /**
+   * 超级转换: 转出源持仓的部分/全部, 按目标净值买入目标持仓。
+   * 目标若未添加则自动建仓 (按名称推断分类、QDII 关键词推断 settleDays)。
+   * 生成 sell + buy 两条交易, 一次操作完成。
+   */
+  async function convertPosition(
+    sourceId: string,
+    target: { symbol: string; name?: string; priceFen: number; currentPriceFen?: number },
+    input: { mode: 'all' | 'shares' | 'amount'; value?: number; feeFen?: number; date?: string }
+  ): Promise<ConvertResult> {
+    const src = await holdingRepo.get(sourceId)
+    if (!src) return { ok: false, reason: 'not-found' }
+    if (src.symbol === target.symbol) return { ok: false, reason: 'same-target' }
+    const srcPrice = src.currentPrice ?? null
+    if (srcPrice == null || !(srcPrice > 0)) return { ok: false, reason: 'no-price' }
+    if (!(target.priceFen > 0)) return { ok: false, reason: 'no-target-price' }
+
+    const txns = await holdingTxnRepo.listByHolding(sourceId)
+    const settleDays = settleDaysOf(src)
+    const pos = computePosition(txns, settleDays, todayISO(), { quantity: src.quantity || 0, avgCost: src.avgCost || 0 })
+    const held = pos.quantity
+    if (held <= 0) return { ok: false, reason: 'invalid' }
+
+    let sourceShares: number | null = null
+    let amountFen: number | null = null
+    if (input.mode === 'all') {
+      sourceShares = held
+    } else if (input.mode === 'shares') {
+      const v = input.value ?? 0
+      if (!(v > 0)) return { ok: false, reason: 'invalid' }
+      if (v > held + 1e-9) return { ok: false, reason: 'exceeds-held' }
+      sourceShares = v
+    } else {
+      const v = yuanToFen(input.value ?? 0)
+      if (!(v > 0)) return { ok: false, reason: 'invalid' }
+      const heldFen = Math.round(held * srcPrice)
+      if (v > heldFen) return { ok: false, reason: 'amount-exceeds' }
+      amountFen = v
+    }
+
+    // 解析/创建目标持仓
+    let tgt = (await holdingRepo.list()).find(h => h.symbol === target.symbol && !h.deletedAt)
+    let targetCreated = false
+    if (!tgt) {
+      const isCN = /^\d{6}$/.test(target.symbol) || target.symbol.length === 6
+      const market: Market = isCN ? 'CN' : 'US'
+      const currency: Currency = isCN ? 'CNY' : 'USD'
+      const name = target.name?.trim() || target.symbol
+      const cat: HoldingCategory = inferCategory(name, target.symbol)
+      tgt = await holdingRepo.add({
+        symbol: target.symbol, name, market, currency, type: 'etf', category: cat,
+        quantity: 0, avgCost: 0, currentPrice: target.priceFen, currentPriceAt: Date.now(),
+        settleDays: suggestSettleDays(name)
+      })
+      targetCreated = true
+    } else if (tgt.currentPrice == null || tgt.currentPrice <= 0) {
+      // 已存在但无现价: 仍允许用本次目标价作为买入价 (临时参考)
+      tgt.currentPrice = target.priceFen
+      tgt.currentPriceAt = Date.now()
+      await holdingRepo.put(tgt)
+    }
+
+    const today = input.date ?? todayISO()
+    const plan = planConversion({
+      sourceShares, amountFen,
+      sourcePriceFen: srcPrice, targetPriceFen: target.priceFen,
+      sourceSettleDays: settleDays, targetSettleDays: settleDaysOf(tgt),
+      feeFen: input.feeFen ?? 0, todayISO: today
+    })
+
+    // 落库 sell (源) + buy (目标)
+    const tag = targetCreated ? '[新建目标]' : ''
+    await holdingTxnRepo.add({
+      holdingId: sourceId, side: 'sell', date: today, price: srcPrice, quantity: plan.sourceShares,
+      fee: 0, note: `转换出→${target.symbol} ${tag}`.trim()
+    })
+    await holdingTxnRepo.add({
+      holdingId: tgt.id, side: 'buy', date: today, price: target.priceFen, quantity: plan.targetShares,
+      fee: 0, note: `转换入←${src.symbol} ${tag}`.trim()
+    })
+    await refresh()
+    return { ok: true, plan, sourceHoldingId: sourceId, targetHoldingId: tgt.id, targetCreated }
+  }
+
+  /**
+   * 加仓: 按金额(元)或份额买入。
+   * 份额 = 金额(分)/净值(分)。需要有效现价 (无则 no-price)。
+   * 确认中份额由结算规则 (settleDays) 在 refresh 中呈现为 pending。
+   */
+  async function addPosition(
+    id: string,
+    input: { mode: 'amount' | 'shares'; value: number; feeFen?: number; date?: string }
+  ): Promise<TradeResult> {
+    const h = await holdingRepo.get(id)
+    if (!h) return { ok: false, reason: 'not-found' }
+    const price = h.currentPrice ?? null
+    if (price == null || !(price > 0)) return { ok: false, reason: 'no-price' }
+    let quantity: number
+    if (input.mode === 'amount') {
+      const amountFen = yuanToFen(input.value)
+      if (!(amountFen > 0)) return { ok: false, reason: 'invalid' }
+      quantity = amountFen / price
+    } else {
+      if (!(input.value > 0)) return { ok: false, reason: 'invalid' }
+      quantity = input.value
+    }
+    await holdingTxnRepo.add({
+      holdingId: id, side: 'buy',
+      date: input.date ?? todayISO(), price, quantity,
+      fee: input.feeFen ?? 0, note: input.mode === 'amount' ? '加仓(按金额)' : '加仓(按份额)'
+    })
+    await refresh()
+    const settleDays = settleDaysOf(h)
+    const pending = !isSettled(input.date ?? todayISO(), settleDays, todayISO())
+    return { ok: true, quantity, pending }
+  }
+
+  /**
+   * 减仓/卖出: 按份额、金额或全部。
+   * 校验: 份额 ≤ 当前已确认持有数量; 金额 ≤ 持有市值。全部卖出后数量归零置 isClosed。
+   */
+  async function reducePosition(
+    id: string,
+    input: { mode: 'amount' | 'shares' | 'all'; value?: number; feeFen?: number; date?: string }
+  ): Promise<TradeResult> {
+    const h = await holdingRepo.get(id)
+    if (!h) return { ok: false, reason: 'not-found' }
+    const price = h.currentPrice ?? null
+    if (price == null || !(price > 0)) return { ok: false, reason: 'no-price' }
+    const txns = await holdingTxnRepo.listByHolding(id)
+    const settleDays = settleDaysOf(h)
+    const pos = computePosition(txns, settleDays, todayISO(), { quantity: h.quantity || 0, avgCost: h.avgCost || 0 })
+    const held = pos.quantity
+    let quantity: number
+    if (input.mode === 'all') {
+      quantity = held
+    } else if (input.mode === 'shares') {
+      quantity = input.value ?? 0
+    } else {
+      const amountFen = yuanToFen(input.value ?? 0)
+      if (!(amountFen > 0)) return { ok: false, reason: 'invalid' }
+      const heldFen = Math.round(held * price)
+      if (amountFen > heldFen) return { ok: false, reason: 'amount-exceeds' }
+      quantity = amountFen / price
+    }
+    if (!(quantity > 0)) return { ok: false, reason: 'invalid' }
+    if (quantity > held + 1e-9) return { ok: false, reason: 'exceeds-held' }
+    quantity = Math.min(quantity, held)
+    await holdingTxnRepo.add({
+      holdingId: id, side: 'sell',
+      date: input.date ?? todayISO(), price, quantity,
+      fee: input.feeFen ?? 0, note: input.mode === 'all' ? '全部卖出' : input.mode === 'amount' ? '减仓(按金额)' : '减仓(按份额)'
+    })
+    await refresh()
+    const pending = !isSettled(input.date ?? todayISO(), settleDays, todayISO())
+    return { ok: true, quantity, pending }
+  }
+
+  /**
    * 按名称/代码批量重新自动分类。
    * scope='unclassified' 仅重算「其他」(默认, 不覆盖用户手动设置); 'all' 重算全部。
    * 返回被改变的持仓数。
@@ -187,5 +384,5 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     return map
   })
 
-  return { holdings, loaded, refresh, addHolding, updatePrice, refreshAllPrices, addTxn, reclassifyAll, totalMarketValueCNY, totalCost, totalUnrealized, byCategory }
+  return { holdings, loaded, refresh, addHolding, updatePrice, refreshAllPrices, addTxn, addPosition, reducePosition, convertPosition, reclassifyAll, totalMarketValueCNY, totalCost, totalUnrealized, byCategory }
 })

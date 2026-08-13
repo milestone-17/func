@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
-  parseFundMNFInfo, parsePingzhongDataTrend,
+  parseFundMNFInfo, parsePingzhongDataTrend, parsePingzhongDataFullTrend,
   fetchFundNavs, fetchFundNavByPingzhongdata, fetchFundQuote
 } from '@/lib/fundQuote'
 
@@ -156,5 +156,37 @@ describe('fetchFundQuote (单只)', () => {
     const nav = await p
     expect(nav?.nav).toBe(1.7811)
     expect(nav?.source).toBe('fundMNFInfo')
+  })
+})
+
+describe('parsePingzhongDataFullTrend 完整历史解析', () => {
+  it('正常多日数据 → 按时间倒序不重要, 都返回 date+nav', () => {
+    const v = [
+      { x: Date.UTC(2026, 7, 5), y: 1.78 },
+      { x: Date.UTC(2026, 7, 6), y: 1.79 },
+      { x: Date.UTC(2026, 7, 7), y: 1.80 }
+    ]
+    const r = parsePingzhongDataFullTrend(v)
+    expect(r).toHaveLength(3)
+    expect(r[0].date).toBe('2026-08-05')
+    expect(r[2].nav).toBe(1.80)
+  })
+
+  it('无效项跳过 (y<=0, 非数, x 非法)', () => {
+    const v = [
+      { x: Date.UTC(2026, 7, 1), y: 1.5 },
+      { x: 'not-a-ts' as unknown as number, y: 1.6 },
+      { x: Date.UTC(2026, 7, 2), y: 0 },
+      { x: Date.UTC(2026, 7, 3), y: 1.7 }
+    ]
+    const r = parsePingzhongDataFullTrend(v)
+    expect(r).toHaveLength(2)
+    expect(r[1].nav).toBe(1.7)
+  })
+
+  it('空/非数组 → 空数组', () => {
+    expect(parsePingzhongDataFullTrend(null)).toEqual([])
+    expect(parsePingzhongDataFullTrend([])).toEqual([])
+    expect(parsePingzhongDataFullTrend({})).toEqual([])
   })
 })

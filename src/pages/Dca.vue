@@ -10,6 +10,11 @@
         </button>
       </div>
 
+      <!-- 周度自动执行结果提示 -->
+      <div v-if="autoExecMsg" class="card card-pad bg-emerald-50 border-emerald-200 text-emerald-800 text-xs">
+        {{ autoExecMsg }}
+      </div>
+
       <!-- 标题 + 操作 -->
       <div class="flex items-center justify-between">
         <div>
@@ -177,6 +182,15 @@
               <button class="btn-ghost !py-1 !text-xs flex-1" @click="autoSplit">均分</button>
             </div>
           </div>
+          <div>
+            <label class="label">目标基金 (定投自动按目标净值生成 buy 交易, 不选则仅记账)</label>
+            <select v-model="targetHoldingId" class="input">
+              <option :value="null">— 不指定 —</option>
+              <option v-for="h in holdingOptions" :key="h.id" :value="h.id">
+                {{ h.name || h.symbol }} ({{ h.symbol }})
+              </option>
+            </select>
+          </div>
           <div class="flex gap-2 pt-1">
             <button class="btn-ghost flex-1" @click="editingCfg = false">取消</button>
             <button class="btn-primary flex-1" @click="saveCfg">保存</button>
@@ -189,20 +203,45 @@
 
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import AppShell from '@/components/AppShell.vue'
 import Badge from '@/components/Badge.vue'
 import LineChart from '@/components/LineChart.vue'
 import DcaSuggestionCard from '@/components/DcaSuggestionCard.vue'
 import DailyDcaCard from '@/components/DailyDcaCard.vue'
 import { useDcaStore, DCA_SYMBOLS, DCA_LABELS } from '@/stores/dca'
+import { useDailyDcaStore } from '@/stores/dailyDca'
+import { usePortfolioStore } from '@/stores/portfolio'
 import { fenToYuan, yuanToFen } from '@/lib/money'
 import { rollingMA } from '@/lib/ma'
 
 const dca = useDcaStore()
+const portfolio = usePortfolioStore()
+const dailyDca = useDailyDcaStore()
+const route = useRoute()
 const symbols = DCA_SYMBOLS
 function label(sym: string) { return DCA_LABELS[sym] ?? sym }
 
-onMounted(async () => { await dca.load() })
+const autoExecMsg = ref('')
+
+onMounted(async () => {
+  await dca.load()
+  if (!portfolio.loaded) await portfolio.refresh()
+  // 详情页跳来 ?target=holdingId → 同步预选每日定投
+  const targetId = String(route.query.target || '')
+  if (targetId) {
+    if (!dailyDca.loaded) await dailyDca.load()
+    if (portfolio.holdings.find(h => h.id === targetId)) {
+      await dailyDca.save({ enabled: true, holdingId: targetId, dailyAmountFen: dailyDca.config?.dailyAmountFen ?? 0 })
+    }
+  }
+  // 周度自动执行 (幂等)
+  const r = await dca.runAutoExecutions()
+  if (r.executed.length > 0) {
+    autoExecMsg.value = `本周已自动定投 ${r.executed.length} 笔, 共 ¥${(r.executed.reduce((s, e) => s + e.amount, 0) / 100).toFixed(2)}`
+    setTimeout(() => { autoExecMsg.value = '' }, 6000)
+  }
+})
 
 function selectSymbol(sym: string) {
   dca.setActive(sym)
@@ -279,12 +318,16 @@ const sideTextClass = computed(() => {
 const editingCfg = ref(false)
 const cfgDraft = ref<{ weeklySplits: [number, number, number, number] }>({ weeklySplits: [0, 0, 0, 0] })
 const monthlyYuan = ref<number | null>(null)
+const targetHoldingId = ref<string | null>(null)
+
+const holdingOptions = computed(() => portfolio.holdings.map(h => ({ id: h.id, name: h.name, symbol: h.symbol })))
 
 function openEditor() {
   cfgDraft.value.weeklySplits = dca.config
     ? [...dca.config.weeklySplits].map(f => fenToYuan(f)) as [number, number, number, number]
     : [200, 200, 200, 200]
   monthlyYuan.value = dca.config ? fenToYuan(dca.config.monthlyBudget) : null
+  targetHoldingId.value = dca.config?.targetHoldingId ?? null
   editingCfg.value = true
 }
 
@@ -304,7 +347,8 @@ async function saveCfg() {
     symbol: dca.activeSymbol,
     monthlyBudget: yuanToFen(monthlyYuan.value ?? totalSplit.value),
     deviationAlertPercent: dca.config?.deviationAlertPercent ?? 5,
-    weeklySplits: cfgDraft.value.weeklySplits.map(y => yuanToFen(y)) as [number, number, number, number]
+    weeklySplits: cfgDraft.value.weeklySplits.map(y => yuanToFen(y)) as [number, number, number, number],
+    targetHoldingId: targetHoldingId.value ?? null
   })
   editingCfg.value = false
 }

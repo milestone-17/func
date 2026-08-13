@@ -85,19 +85,19 @@ describe('分类聚合', () => {
     // CNY 持仓 · nasdaq100 · 现价 10 元(1000分) · 100 份 → 100000 分
     const cn = await p.addHolding({
       symbol: 'CN1', name: 'CN', market: 'CN', currency: 'CNY', type: 'stock', category: 'nasdaq100',
-      quantity: 100, avgCost: 1000, currentPrice: 1000, currentPriceAt: Date.now()
+      quantity: 0, avgCost: 0, currentPrice: 1000, currentPriceAt: Date.now()
     })
     await p.addTxn({ holdingId: cn.id, side: 'buy', date: '2026-08-01', price: 1000, quantity: 100, fee: 0 })
     // USD 持仓 · nasdaq100 · 现价 100 美元(10000分) · 10 份 → 100000 分 USD → ×7.2 = 720000 分 CNY
     const us = await p.addHolding({
       symbol: 'US1', name: 'US', market: 'US', currency: 'USD', type: 'stock', category: 'nasdaq100',
-      quantity: 10, avgCost: 10000, currentPrice: 10000, currentPriceAt: Date.now()
+      quantity: 0, avgCost: 0, currentPrice: 10000, currentPriceAt: Date.now()
     })
     await p.addTxn({ holdingId: us.id, side: 'buy', date: '2026-08-01', price: 10000, quantity: 10, fee: 0 })
     // 债券分类
     const bd = await p.addHolding({
       symbol: 'BD1', name: 'BD', market: 'CN', currency: 'CNY', type: 'bond', category: 'bond',
-      quantity: 1, avgCost: 50000, currentPrice: 50000, currentPriceAt: Date.now()
+      quantity: 0, avgCost: 0, currentPrice: 50000, currentPriceAt: Date.now()
     })
     await p.addTxn({ holdingId: bd.id, side: 'buy', date: '2026-08-01', price: 50000, quantity: 1, fee: 0 })
 
