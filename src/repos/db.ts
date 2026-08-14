@@ -1,7 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 
 export const DB_NAME = 'func-db'
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 export interface FuncDB extends DBSchema {
   transactions: { key: string; value: any; indexes: { 'by-date': string; 'by-type': string } }
@@ -16,6 +16,8 @@ export interface FuncDB extends DBSchema {
   dailyDcaConfigs: { key: string; value: any }
   settings: { key: string; value: any }
   meta: { key: string; value: any }
+  /** v3: 估值分位快照 (主键 = 'YYYY-MM-DD') */
+  valuationSnapshots: { key: string; value: any }
 }
 
 // 注意: 不使用单例缓存, 每次 openDb() 都打开新连接.
@@ -52,6 +54,12 @@ export function openDb(): Promise<IDBPDatabase<FuncDB>> {
       if (oldVersion < 2) {
         if (!db.objectStoreNames.contains('dailyDcaConfigs')) {
           db.createObjectStore('dailyDcaConfigs', { keyPath: 'id' })
+        }
+      }
+      // v3: 新增估值分位快照 store; 一次/天, id = 'YYYY-MM-DD'.
+      if (oldVersion < 3) {
+        if (!db.objectStoreNames.contains('valuationSnapshots')) {
+          db.createObjectStore('valuationSnapshots', { keyPath: 'id' })
         }
       }
     }

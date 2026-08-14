@@ -8,6 +8,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/holding/:id', name: 'holding-detail', component: () => import('@/pages/HoldingDetail.vue') },
   { path: '/permanent', name: 'permanent', component: () => import('@/pages/Permanent.vue') },
   { path: '/dca', name: 'dca', component: () => import('@/pages/Dca.vue') },
+  { path: '/suggest', name: 'suggest', component: () => import('@/pages/Suggest.vue') },
   { path: '/settings', name: 'settings', component: () => import('@/pages/Settings.vue') }
 ]
 

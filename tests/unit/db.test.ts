@@ -11,7 +11,7 @@ describe('openDb', () => {
 
   it('exports DB_NAME and SCHEMA_VERSION', () => {
     expect(DB_NAME).toBe('func-db')
-    expect(SCHEMA_VERSION).toBe(2)
+    expect(SCHEMA_VERSION).toBe(3)
   })
 
   it('creates database with all required object stores', async () => {
@@ -29,6 +29,7 @@ describe('openDb', () => {
     expect(stores).toContain('dailyDcaConfigs')
     expect(stores).toContain('settings')
     expect(stores).toContain('meta')
+    expect(stores).toContain('valuationSnapshots')
     db.close()
   })
 
@@ -40,7 +41,7 @@ describe('openDb', () => {
     b.close()
   })
 
-  it('v1 → v2 升级: 保留历史数据 + 新增 dailyDcaConfigs, 不重建已有 store', async () => {
+  it('v1 → v3 升级: 保留历史数据 + 新增 dailyDcaConfigs + valuationSnapshots, 不重建已有 store', async () => {
     // 1. 模拟旧用户 v1 库, 写入若干数据
     indexedDB.deleteDatabase(DB_NAME)
     const v1 = await openDB(DB_NAME, 1, {
@@ -54,18 +55,19 @@ describe('openDb', () => {
     await v1.put('dcaConfigs', { id: 'singleton', symbol: 'NDX', monthlyBudget: 80000 })
     v1.close()
 
-    // 2. 新版本 openDb() (v2) 打开 → 触发 1→2 升级
-    const v2 = await openDb()
-    expect(v2.version).toBe(2)
-    const stores = [...v2.objectStoreNames]
-    expect(stores).toContain('dailyDcaConfigs') // v2 新增
-    expect(stores).toContain('holdings')        // v1 保留
+    // 2. 新版本 openDb() (v3) 打开 → 触发 1→2→3 升级
+    const v3 = await openDb()
+    expect(v3.version).toBe(3)
+    const stores = [...v3.objectStoreNames]
+    expect(stores).toContain('dailyDcaConfigs')    // v2 新增
+    expect(stores).toContain('valuationSnapshots') // v3 新增
+    expect(stores).toContain('holdings')           // v1 保留
 
     // 3. 旧数据完整未丢
-    const h = await v2.get('holdings', 'h-old')
+    const h = await v3.get('holdings', 'h-old')
     expect((h as any)?.symbol).toBe('QQQ')
-    const cfg = await v2.get('dcaConfigs', 'singleton')
+    const cfg = await v3.get('dcaConfigs', 'singleton')
     expect((cfg as any)?.monthlyBudget).toBe(80000)
-    v2.close()
+    v3.close()
   })
 })
