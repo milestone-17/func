@@ -8,7 +8,7 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { BUILTIN_SYMBOLS, fetchOne, matchesSearch } from '@/lib/valuation'
+import { BUILTIN_INDICES, fetchOne, matchesSearch, enumerateIndustrySymbols } from '@/lib/valuation'
 import { valuationRepo } from '@/repos/valuationRepo'
 import type { ValuationRow, ValuationSnapshot, SortMode, ValuationSymbol } from '@/types/valuation'
 
@@ -22,6 +22,8 @@ export const useValuationStore = defineStore('valuation', () => {
   const search = ref('')
   const lastFetchedAt = ref<number | null>(null)
   const staleDate = ref<string | null>(null)  // 当 rows 来自陈旧快照时填, UI 标"陈旧"
+  /** 最近一次枚举到的行业 symbol 列表 (供 retryOne / 枚举失败兜底) */
+  const industrySymbols = ref<ValuationSymbol[]>([])
 
   // ---- getters ----
 
@@ -59,8 +61,9 @@ export const useValuationStore = defineStore('valuation', () => {
   // ---- actions ----
 
   /**
-   * 并行拉取全部内置标的 (指数内部翻页, 并行保证整体快)
-   * 返回 { ok, fail }; 进度通过 progress ref 实时更新
+   * 并行拉取全部标的 (6 指数硬编码 + 行业运行时枚举; 指数内部翻页, 并行保证整体快)
+   * 每个标的 resolve 后就地更新对应行 (渐进填充), 进度条同步推进。
+   * 返回 { ok, fail }; 行业枚举失败时兜底到内存/最近快照里的行业列表, 不抛错。
    */
   async function fetchAll(): Promise<{ ok: number; fail: number }> {
     if (loading.value) return { ok: 0, fail: 0 }
@@ -68,42 +71,56 @@ export const useValuationStore = defineStore('valuation', () => {
     error.value = null
     progress.value = 0
     staleDate.value = null
-    const startMs = Date.now()
-    const total = BUILTIN_SYMBOLS.length
-    const freshRows: ValuationRow[] = []
-    let ok = 0
-    let fail = 0
 
-    // 先建占位行 (UI 能立刻看到骨架)
-    for (const s of BUILTIN_SYMBOLS) {
-      freshRows.push({
-        code: s.symbol,
-        name: s.name,
-        kind: s.kind,
-        peTtm: null, pb: null, percentile: null,
-        bucket: null, bucketLabel: null, bucketAdvice: null, bucketTone: null,
-        fetchedAt: Date.now()
-      })
+    // A. 组装符号列表: 6 指数 + 行业 (动态枚举; 失败兜底到内存/最近快照)
+    let enumerated: ValuationSymbol[] = []
+    try {
+      enumerated = await enumerateIndustrySymbols()
+    } catch (e) {
+      // 枚举失败不阻塞: 兜底到 ① 内存中的上次行业列表 ② 最近快照 rows 里的行业行 ③ 无
+      if (industrySymbols.value.length > 0) {
+        enumerated = industrySymbols.value
+      } else {
+        enumerated = rows.value
+          .filter(r => r.kind === 'industry')
+          .map(r => ({ code: r.code, symbol: r.code, name: r.name, kind: 'industry' as const }))
+      }
+      void e
     }
+    industrySymbols.value = enumerated
+    const symbols: ValuationSymbol[] = [...BUILTIN_INDICES, ...enumerated]
+    const total = symbols.length
+
+    // 占位行 (UI 立刻看到全部骨架)
+    const freshRows: ValuationRow[] = symbols.map(s => ({
+      code: s.symbol,
+      name: s.name,
+      kind: s.kind,
+      peTtm: null, pb: null, percentile: null,
+      bucket: null, bucketLabel: null, bucketAdvice: null, bucketTone: null,
+      fetchedAt: Date.now()
+    }))
     rows.value = freshRows
 
-    // 并行拉取 (指数内部翻 5 页, 串行 40 请求太慢; fetchOne 失败不抛, 写 failReason)
+    // B. 并行拉取 + 渐进填充 (fetchOne 失败不抛, 写 failReason)
     let done = 0
+    let ok = 0
+    let fail = 0
     const results = await Promise.all(
-      BUILTIN_SYMBOLS.map(async (sym) => {
+      symbols.map(async (sym, idx) => {
         const row = await fetchOne(sym)
         done++
         progress.value = Math.round((done / total) * 100)
+        rows.value[idx] = row  // 就地更新该行, 表格边拉边涨
         return row
       })
     )
-    rows.value = results
     for (const row of results) {
       if (row.failReason) fail++
       else ok++
     }
 
-    // 写当日快照
+    // C. 写当日快照
     try {
       const snapshot: ValuationSnapshot = {
         id: new Date().toISOString().slice(0, 10),
@@ -118,7 +135,7 @@ export const useValuationStore = defineStore('valuation', () => {
       error.value = e instanceof Error ? e.message : 'snapshot-save-fail'
     }
 
-    // 全部失败 → 尝试加载任意陈旧快照
+    // D. 全部失败 → 尝试加载任意陈旧快照
     if (ok === 0 && fail > 0) {
       const stale = await valuationRepo.getLatest()
       if (stale) {
@@ -128,7 +145,6 @@ export const useValuationStore = defineStore('valuation', () => {
     }
 
     loading.value = false
-    void startMs
     return { ok, fail }
   }
 
@@ -162,10 +178,12 @@ export const useValuationStore = defineStore('valuation', () => {
   }
 
   /**
-   * 重跑单个标的
+   * 重跑单个标的 (在 6 指数 + 最近枚举的行业列表里按 code 匹配)
    */
   async function retryOne(code: string): Promise<void> {
-    const sym: ValuationSymbol | undefined = BUILTIN_SYMBOLS.find(s => s.symbol === code)
+    const sym =
+      BUILTIN_INDICES.find(s => s.symbol === code) ??
+      industrySymbols.value.find(s => s.symbol === code)
     if (!sym) return
     const row = await fetchOne(sym)
     const idx = rows.value.findIndex(r => r.code === code)
@@ -177,6 +195,7 @@ export const useValuationStore = defineStore('valuation', () => {
 
   return {
     rows, progress, loading, error, sortMode, search, lastFetchedAt, staleDate,
+    industrySymbols,
     displayedRows, summary,
     fetchAll, loadFromCache, staleFallback, retryOne,
     setSortMode, setSearch

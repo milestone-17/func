@@ -25,9 +25,9 @@ import type {
   BucketTone
 } from '@/types/valuation'
 
-// ---------- 内置标的列表 (6 宽基 + 10 申万行业, 全部对齐已验证数据源) ----------
+// ---------- 内置标的列表: 6 宽基指数硬编码; 行业运行时枚举 (见 enumerateIndustrySymbols) ----------
 
-export const BUILTIN_SYMBOLS: ValuationSymbol[] = [
+export const BUILTIN_INDICES: ValuationSymbol[] = [
   // —— 6 宽基指数: RPT_VALUEMARKET 仅覆盖以下市场 ——
   // 原需求的中证500(000905)/中证1000(000852)/上证50(000016) 不在该报表,
   // 且无其他浏览器可用的 CORS 数据源, 故以同样具有代表性的宽基替代。
@@ -36,18 +36,7 @@ export const BUILTIN_SYMBOLS: ValuationSymbol[] = [
   { code: '399001', symbol: 'sz399001', name: '深证成指', kind: 'index' },
   { code: '399006', symbol: 'sz399006', name: '创业板指', kind: 'index' },
   { code: '000688', symbol: 'sh000688', name: '科创50',   kind: 'index' },
-  { code: '899050', symbol: 'bj899050', name: '北证50',   kind: 'index' },
-  // —— 10 申万行业: RPT_VALUEINDUSTRY_DET 为申万三级粒度, 每个目标一级行业取代表性三级子行业 ——
-  { code: '016029', symbol: '016029', name: '银行Ⅱ',   kind: 'industry' },  // 申万一级: 银行
-  { code: '016024', symbol: '016024', name: '化学制药', kind: 'industry' },  // 申万一级: 医药生物
-  { code: '016077', symbol: '016077', name: '半导体',   kind: 'industry' },  // 申万一级: 电子
-  { code: '016057', symbol: '016057', name: '软件开发', kind: 'industry' },  // 申万一级: 计算机
-  { code: '016165', symbol: '016165', name: '白酒Ⅱ',   kind: 'industry' },  // 申万一级: 食品饮料
-  { code: '016074', symbol: '016074', name: '电池',     kind: 'industry' },  // 申万一级: 电力设备
-  { code: '016027', symbol: '016027', name: '证券Ⅱ',   kind: 'industry' },  // 申万一级: 非银金融
-  { code: '016087', symbol: '016087', name: '游戏Ⅱ',   kind: 'industry' },  // 申万一级: 传媒
-  { code: '016015', symbol: '016015', name: '通信设备', kind: 'industry' },  // 申万一级: 通信
-  { code: '016113', symbol: '016113', name: '服装家纺', kind: 'industry' }   // 申万一级: 纺织服饰
+  { code: '899050', symbol: 'bj899050', name: '北证50',   kind: 'index' }
 ]
 
 // ---------- 5 档分级定义 ----------
@@ -169,6 +158,44 @@ export function parseEastmoneyValuationHistory(
       if (Number.isFinite(pbRaw) && pbRaw > 0) pb = pbRaw
     }
     out.push({ date, peTtm: peRaw, pb })
+  }
+  return out
+}
+
+// ---------- 纯函数: 解析行业枚举快照 ----------
+
+export interface IndustryBoard {
+  code: string
+  name: string
+  peTtm: number | null
+  pb: number | null
+}
+
+/**
+ * 解析行业枚举快照响应 (RPT_VALUEINDUSTRY_DET, filter=(TRADE_DATE='<date>'))
+ * 路径: result.data[] 每条 { BOARD_CODE, BOARD_NAME, PE_TTM, PB_MRQ }
+ * - BOARD_CODE/BOARD_NAME 缺失 → 跳过该行
+ * - PE_TTM/PB_MRQ ≤ 0 或缺失 → 对应字段为 null (枚举只用于生成 symbol 列表, 不阻塞)
+ */
+export function parseIndustryEnumeration(payload: unknown): IndustryBoard[] {
+  if (!payload || typeof payload !== 'object') return []
+  const result = (payload as { result?: { data?: unknown[] } }).result
+  if (!result || !Array.isArray(result.data)) return []
+  const out: IndustryBoard[] = []
+  for (const row of result.data) {
+    if (!row || typeof row !== 'object') continue
+    const obj = row as { BOARD_CODE?: unknown; BOARD_NAME?: unknown; PE_TTM?: unknown; PB_MRQ?: unknown }
+    const code = String(obj.BOARD_CODE ?? '').trim()
+    const name = String(obj.BOARD_NAME ?? '').trim()
+    if (!code || !name) continue
+    const peRaw = Number(obj.PE_TTM)
+    const pbRaw = Number(obj.PB_MRQ)
+    out.push({
+      code,
+      name,
+      peTtm: Number.isFinite(peRaw) && peRaw > 0 ? peRaw : null,
+      pb: Number.isFinite(pbRaw) && pbRaw > 0 ? pbRaw : null
+    })
   }
   return out
 }
@@ -303,6 +330,59 @@ async function fetchIndustryValuation(symbol: ValuationSymbol): Promise<Valuatio
     peTtm: current.peTtm,
     pb: current.pb,
     history: rows.map(p => p.peTtm).filter((v): v is number => v != null)
+  }
+}
+
+/**
+ * 本地时区的今天 'YYYY-MM-DD' (不用 toISOString, 避免 UTC 与东八区跨日偏差)
+ */
+function todayIso(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/**
+ * 动态枚举全部申万三级行业 (RPT_VALUEINDUSTRY_DET, 2026-08-14 实拉: 127 个)
+ * - 传 anchorDate ('YYYY-MM-DD') 则直接取该交易日快照; 否则先在报表上发
+ *   `TRADE_DATE<='今天'` pageSize=1 拿最新交易日 (1 次小请求, 实拉验证)。
+ * - 快照一次返回全部行业 (BOARD_CODE + BOARD_NAME), 生成 kind='industry' 的 symbol 列表。
+ * - 任何一步失败都抛 'enum-fail: ...', 由 store 兜底到缓存行业列表。
+ */
+export async function enumerateIndustrySymbols(anchorDate?: string): Promise<ValuationSymbol[]> {
+  try {
+    let date = anchorDate
+    if (!date) {
+      const latest = await requestData(
+        'RPT_VALUEINDUSTRY_DET',
+        `(TRADE_DATE<='${todayIso()}')`,
+        'TRADE_DATE',
+        1,
+        1
+      )
+      const first = (latest as { result?: { data?: Array<{ TRADE_DATE?: unknown }> } }).result?.data?.[0]
+      const found = first ? parseTradeDate(first.TRADE_DATE) : null
+      if (!found) throw new Error('empty-latest-date')
+      date = found
+    }
+    const payload = await requestData(
+      'RPT_VALUEINDUSTRY_DET',
+      `(TRADE_DATE='${date}')`,
+      'BOARD_CODE,BOARD_NAME,PE_TTM,PB_MRQ',
+      1,
+      400
+    )
+    const boards = parseIndustryEnumeration(payload)
+    if (boards.length === 0) throw new Error('empty-board-list')
+    return boards.map(b => ({
+      code: b.code,
+      symbol: b.code,
+      name: b.name,
+      kind: 'industry' as const
+    }))
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'unknown'
+    throw new Error('enum-fail: ' + msg)
   }
 }
 

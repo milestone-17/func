@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { fetchOne, BUILTIN_SYMBOLS } from '@/lib/valuation'
+import { fetchOne, BUILTIN_INDICES } from '@/lib/valuation'
 import type { ValuationSymbol } from '@/types/valuation'
 
 /**
@@ -73,10 +73,10 @@ function makeExplicitHistoryMock(newestPe: number, historyPe: number[], field: '
   }) as Response)
 }
 
-/** 行业 symbol: BUILTIN_SYMBOLS[6] = 银行Ⅱ (1 次请求拿全) */
-const INDUSTRY: ValuationSymbol = BUILTIN_SYMBOLS[6]
-/** 指数 symbol: BUILTIN_SYMBOLS[0] = 上证指数 (分页) */
-const INDEX: ValuationSymbol = BUILTIN_SYMBOLS[0]
+/** 行业 symbol: 银行Ⅱ (1 次请求拿全), 现在由 enumerateIndustrySymbols 运行时枚举 */
+const INDUSTRY: ValuationSymbol = { code: '016029', symbol: '016029', name: '银行Ⅱ', kind: 'industry' }
+/** 指数 symbol: BUILTIN_INDICES[0] = 上证指数 (分页) */
+const INDEX: ValuationSymbol = BUILTIN_INDICES[0]
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -202,7 +202,7 @@ describe('fetchOne - 失败路径 + URL 回归', () => {
   })
 
   it('行业 URL: filter 单次编码, 不能出现 %25 (双重编码回归)', async () => {
-    // BUILTIN_SYMBOLS[6] = 银行Ⅱ, BOARD_CODE=016029
+    // 银行Ⅱ, BOARD_CODE=016029 (行业符号由枚举生成, 这里直接构造)
     const fetchMock = makePagingFetchMock({ center: 7, count: 500, perPage: 2400, field: 'PE_TTM', pbField: 'PB_MRQ' })
     vi.stubGlobal('fetch', fetchMock)
 

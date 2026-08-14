@@ -1,10 +1,12 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   computePercentile,
   bucketByPercentile,
   parseEastmoneyValuationHistory,
   matchesSearch,
-  BUILTIN_SYMBOLS
+  parseIndustryEnumeration,
+  enumerateIndustrySymbols,
+  BUILTIN_INDICES
 } from '@/lib/valuation'
 
 describe('computePercentile', () => {
@@ -242,18 +244,113 @@ describe('matchesSearch', () => {
   })
 })
 
-describe('BUILTIN_SYMBOLS', () => {
-  it('至少 16 个标的', () => {
-    expect(BUILTIN_SYMBOLS.length).toBeGreaterThanOrEqual(16)
+describe('parseIndustryEnumeration', () => {
+  it('正常解析 BOARD_CODE/BOARD_NAME/PE_TTM/PB_MRQ', () => {
+    const payload = {
+      result: {
+        data: [
+          { BOARD_CODE: '016001', BOARD_NAME: '航空机场', PE_TTM: 20.5, PB_MRQ: 1.2 },
+          { BOARD_CODE: '016002', BOARD_NAME: '铁路公路', PE_TTM: 15.3, PB_MRQ: 1.1 }
+        ]
+      }
+    }
+    expect(parseIndustryEnumeration(payload)).toEqual([
+      { code: '016001', name: '航空机场', peTtm: 20.5, pb: 1.2 },
+      { code: '016002', name: '铁路公路', peTtm: 15.3, pb: 1.1 }
+    ])
   })
-  it('至少 6 个指数', () => {
-    expect(BUILTIN_SYMBOLS.filter(s => s.kind === 'index').length).toBeGreaterThanOrEqual(6)
+  it('空 payload / result 缺失 → []', () => {
+    expect(parseIndustryEnumeration(null)).toEqual([])
+    expect(parseIndustryEnumeration({})).toEqual([])
+    expect(parseIndustryEnumeration({ result: { data: 'oops' } })).toEqual([])
   })
-  it('至少 10 个行业', () => {
-    expect(BUILTIN_SYMBOLS.filter(s => s.kind === 'industry').length).toBeGreaterThanOrEqual(10)
+  it('BOARD_CODE/NAME 缺失 → 跳过该行; PE≤0/PB≤0 → 字段为 null 但不阻塞', () => {
+    const payload = {
+      result: {
+        data: [
+          { BOARD_NAME: '无名' },                              // 缺 code → 跳过
+          { BOARD_CODE: '016001', BOARD_NAME: '' },            // 空 name → 跳过
+          { BOARD_CODE: '016002', BOARD_NAME: '铁路公路', PE_TTM: 0, PB_MRQ: -1 }  // PE/PB 异常 → null
+        ]
+      }
+    }
+    expect(parseIndustryEnumeration(payload)).toEqual([
+      { code: '016002', name: '铁路公路', peTtm: null, pb: null }
+    ])
   })
-  it('每个标的 code 必填', () => {
-    for (const s of BUILTIN_SYMBOLS) {
+})
+
+describe('enumerateIndustrySymbols', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('传 anchorDate: 直接发精确日期快照请求, 生成 kind=industry 的 symbol 列表 (无 %25)', async () => {
+    const boards = [
+      { BOARD_CODE: '016001', BOARD_NAME: '航空机场', PE_TTM: 20.5, PB_MRQ: 1.2 },
+      { BOARD_CODE: '016002', BOARD_NAME: '铁路公路', PE_TTM: 15.3, PB_MRQ: 1.1 }
+    ]
+    const fetchMock = vi.fn(async (_url: string) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ result: { data: boards } })
+    }) as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const symbols = await enumerateIndustrySymbols('2026-08-13')
+    expect(symbols).toEqual([
+      { code: '016001', symbol: '016001', name: '航空机场', kind: 'industry' },
+      { code: '016002', symbol: '016002', name: '铁路公路', kind: 'industry' }
+    ])
+    const url = fetchMock.mock.calls[0][0] as string
+    expect(url).toMatch(/reportName=RPT_VALUEINDUSTRY_DET/)
+    expect(url).toMatch(/filter=%28TRADE_DATE%3D%272026-08-13%27%29/)
+    expect(url).not.toMatch(/%25/)
+  })
+
+  it('不传 anchorDate: 先 TRADE_DATE<=\'今天\' pageSize=1 发现最新交易日, 再取快照 (2 次请求)', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true, status: 200,
+        json: async () => ({ result: { data: [{ TRADE_DATE: '2026-08-13 00:00:00' }] } })
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true, status: 200,
+        json: async () => ({ result: { data: [{ BOARD_CODE: '016001', BOARD_NAME: '航空机场' }] } })
+      } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const symbols = await enumerateIndustrySymbols()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(symbols[0].code).toBe('016001')
+    const u0 = fetchMock.mock.calls[0][0] as string
+    const u1 = fetchMock.mock.calls[1][0] as string
+    expect(u0).toMatch(/filter=%28TRADE_DATE%3C%3D%27/)  // TRADE_DATE<='今天'
+    expect(u0).toMatch(/pageSize=1/)
+    expect(u1).toMatch(/filter=%28TRADE_DATE%3D%272026-08-13%27%29/)
+  })
+
+  it('快照为空 → 抛 "enum-fail: empty-board-list"', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ result: { data: [] } })
+    }) as Response))
+    await expect(enumerateIndustrySymbols('2026-08-13')).rejects.toThrow('enum-fail: empty-board-list')
+  })
+
+  it('网络失败 → 抛 "enum-fail: network-fail: ..." 前缀', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('boom')))
+    await expect(enumerateIndustrySymbols('2026-08-13')).rejects.toThrow(/^enum-fail: network-fail/)
+  })
+})
+
+describe('BUILTIN_INDICES', () => {
+  it('恰好 6 个宽基指数, 行业不再硬编码', () => {
+    expect(BUILTIN_INDICES.length).toBe(6)
+    expect(BUILTIN_INDICES.every(s => s.kind === 'index')).toBe(true)
+  })
+  it('每个标的 code/symbol/name 必填', () => {
+    for (const s of BUILTIN_INDICES) {
       expect(s.code).toBeTruthy()
       expect(s.name).toBeTruthy()
       expect(s.symbol).toBeTruthy()
