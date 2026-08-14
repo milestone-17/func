@@ -2,8 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   computePercentile,
   bucketByPercentile,
-  parseEastmoneyKline,
-  parseEastmoneySnapshot,
+  parseEastmoneyValuationHistory,
   matchesSearch,
   BUILTIN_SYMBOLS
 } from '@/lib/valuation'
@@ -107,66 +106,118 @@ describe('bucketByPercentile', () => {
   })
 })
 
-describe('parseEastmoneyKline', () => {
-  it('payload 为空对象 → []', () => {
-    expect(parseEastmoneyKline({})).toEqual([])
+describe('parseEastmoneyValuationHistory', () => {
+  it('空对象 → []', () => {
+    expect(parseEastmoneyValuationHistory({})).toEqual([])
   })
   it('payload 为 null → []', () => {
-    expect(parseEastmoneyKline(null)).toEqual([])
+    expect(parseEastmoneyValuationHistory(null)).toEqual([])
   })
-  it('klines 字段缺失 → []', () => {
-    expect(parseEastmoneyKline({ data: {} })).toEqual([])
+  it('result 字段缺失 → []', () => {
+    expect(parseEastmoneyValuationHistory({ code: 0 })).toEqual([])
   })
-  it('klines 不是数组 → []', () => {
-    expect(parseEastmoneyKline({ klines: 'not-array' })).toEqual([])
+  it('data 非数组 → []', () => {
+    expect(parseEastmoneyValuationHistory({ result: { data: 'oops' } })).toEqual([])
   })
-  it('正常 K 线行 → 取出 pe_ttm 序列', () => {
+  it('正常: 解析 TRADE_DATE / PE_TTM / PB', () => {
     const payload = {
-      klines: [
-        '2024-01-02,3000,3050,3080,2990,100,200,12.5',
-        '2024-01-03,3050,3100,3120,3040,110,220,13.2',
-        '2024-01-04,3100,3080,3110,3070,105,210,12.8'
-      ]
+      result: {
+        data: [
+          { TRADE_DATE: '2024-08-13', PE_TTM: 18.5, PB: 3.2 },
+          { TRADE_DATE: '2024-08-12', PE_TTM: 18.7, PB: 3.21 },
+          { TRADE_DATE: '2024-08-09', PE_TTM: 18.9, PB: 3.25 }
+        ]
+      }
     }
-    expect(parseEastmoneyKline(payload)).toEqual([12.5, 13.2, 12.8])
+    expect(parseEastmoneyValuationHistory(payload)).toEqual([
+      { date: '2024-08-13', peTtm: 18.5, pb: 3.2 },
+      { date: '2024-08-12', peTtm: 18.7, pb: 3.21 },
+      { date: '2024-08-09', peTtm: 18.9, pb: 3.25 }
+    ])
   })
-  it('pe_ttm 为 0/负/非数 → 跳过', () => {
+  it('PE_TTM ≤ 0 → 跳过该行', () => {
     const payload = {
-      klines: [
-        '2024-01-02,3000,3050,3080,2990,100,200,12.5',
-        '2024-01-03,3050,3100,3120,3040,110,220,0',       // pe=0
-        '2024-01-04,3100,3080,3110,3070,105,210,-1.5',    // pe<0
-        '2024-01-05,3100,3080,3110,3070,105,210,abc'      // 非数
-      ]
+      result: {
+        data: [
+          { TRADE_DATE: '2024-08-13', PE_TTM: 18.5, PB: 3.2 },
+          { TRADE_DATE: '2024-08-12', PE_TTM: 0, PB: 3.21 },       // 0
+          { TRADE_DATE: '2024-08-11', PE_TTM: -1, PB: 3.21 },      // 负
+          { TRADE_DATE: '2024-08-10', PE_TTM: 18.0, PB: 3.0 }
+        ]
+      }
     }
-    expect(parseEastmoneyKline(payload)).toEqual([12.5])
+    expect(parseEastmoneyValuationHistory(payload)).toEqual([
+      { date: '2024-08-13', peTtm: 18.5, pb: 3.2 },
+      { date: '2024-08-10', peTtm: 18.0, pb: 3.0 }
+    ])
   })
-  it('列数不足 8 → 跳过', () => {
+  it('PB 缺失或 ≤ 0 → pb = null (不阻塞该行)', () => {
     const payload = {
-      klines: ['2024-01-02,3000,3050']  // 只有 3 列
+      result: {
+        data: [
+          { TRADE_DATE: '2024-08-13', PE_TTM: 18.5, PB: 0 },
+          { TRADE_DATE: '2024-08-12', PE_TTM: 18.7 }  // PB 字段不存在
+        ]
+      }
     }
-    expect(parseEastmoneyKline(payload)).toEqual([])
+    expect(parseEastmoneyValuationHistory(payload)).toEqual([
+      { date: '2024-08-13', peTtm: 18.5, pb: null },
+      { date: '2024-08-12', peTtm: 18.7, pb: null }
+    ])
   })
-})
-
-describe('parseEastmoneySnapshot', () => {
-  it('空对象 → 双 null', () => {
-    expect(parseEastmoneySnapshot({})).toEqual({ peTtm: null, pb: null })
+  it('TRADE_DATE 格式不合法 → 跳过', () => {
+    const payload = {
+      result: {
+        data: [
+          { TRADE_DATE: '20240813', PE_TTM: 18.5 },  // 缺横线
+          { TRADE_DATE: '2024-08-13', PE_TTM: 18.7 },
+          { TRADE_DATE: '', PE_TTM: 18.9 }
+        ]
+      }
+    }
+    expect(parseEastmoneyValuationHistory(payload)).toEqual([
+      { date: '2024-08-13', peTtm: 18.7, pb: null }
+    ])
   })
-  it('data 字段缺失 → 双 null', () => {
-    expect(parseEastmoneySnapshot({ rc: 0 })).toEqual({ peTtm: null, pb: null })
+  it('TRADE_DATE 带时间后缀 (真实东财 "2026-08-13 00:00:00") → 归一为日期', () => {
+    const payload = {
+      result: {
+        data: [
+          { TRADE_DATE: '2026-08-13 00:00:00', PE_TTM: 18.5, PB: 3.2 },
+          { TRADE_DATE: '2026-08-12 00:00:00', PE_TTM: 18.7, PB: 3.21 }
+        ]
+      }
+    }
+    expect(parseEastmoneyValuationHistory(payload)).toEqual([
+      { date: '2026-08-13', peTtm: 18.5, pb: 3.2 },
+      { date: '2026-08-12', peTtm: 18.7, pb: 3.21 }
+    ])
   })
-  it('正常: f9/f23 单位 ×100, 返回除以 100', () => {
-    expect(parseEastmoneySnapshot({ data: { f9: 1250, f23: 350 } }))
-      .toEqual({ peTtm: 12.5, pb: 3.5 })
+  it('指数 RPT_VALUEMARKET: peField=PE_TTM_AVG, pbField=null → pb 恒 null', () => {
+    const payload = {
+      result: {
+        data: [
+          { TRADE_DATE: '2026-08-13 00:00:00', PE_TTM_AVG: 36.63 },
+          { TRADE_DATE: '2026-08-12 00:00:00', PE_TTM_AVG: 36.1 }
+        ]
+      }
+    }
+    expect(parseEastmoneyValuationHistory(payload, 'PE_TTM_AVG', null)).toEqual([
+      { date: '2026-08-13', peTtm: 36.63, pb: null },
+      { date: '2026-08-12', peTtm: 36.1, pb: null }
+    ])
   })
-  it('f9 = 0 → peTtm null', () => {
-    expect(parseEastmoneySnapshot({ data: { f9: 0, f23: 350 } }))
-      .toEqual({ peTtm: null, pb: 3.5 })
-  })
-  it('仅 pe 缺失 → pb 仍正常', () => {
-    expect(parseEastmoneySnapshot({ data: { f23: 200 } }))
-      .toEqual({ peTtm: null, pb: 2.0 })
+  it('行业 RPT_VALUEINDUSTRY_DET: pbField=PB_MRQ', () => {
+    const payload = {
+      result: {
+        data: [
+          { TRADE_DATE: '2026-08-13 00:00:00', PE_TTM: 7.07, PB_MRQ: 0.692 }
+        ]
+      }
+    }
+    expect(parseEastmoneyValuationHistory(payload, 'PE_TTM', 'PB_MRQ')).toEqual([
+      { date: '2026-08-13', peTtm: 7.07, pb: 0.692 }
+    ])
   })
 })
 

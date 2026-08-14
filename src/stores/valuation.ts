@@ -59,7 +59,7 @@ export const useValuationStore = defineStore('valuation', () => {
   // ---- actions ----
 
   /**
-   * 串行拉取全部内置标的
+   * 并行拉取全部内置标的 (指数内部翻页, 并行保证整体快)
    * 返回 { ok, fail }; 进度通过 progress ref 实时更新
    */
   async function fetchAll(): Promise<{ ok: number; fail: number }> {
@@ -87,16 +87,20 @@ export const useValuationStore = defineStore('valuation', () => {
     }
     rows.value = freshRows
 
-    for (let i = 0; i < BUILTIN_SYMBOLS.length; i++) {
-      const sym = BUILTIN_SYMBOLS[i]
-      const row = await fetchOne(sym)
-      // 替换占位行 (按 code 匹配)
-      const idx = rows.value.findIndex(r => r.code === sym.symbol)
-      if (idx >= 0) rows.value.splice(idx, 1, row)
-      else rows.value.push(row)
+    // 并行拉取 (指数内部翻 5 页, 串行 40 请求太慢; fetchOne 失败不抛, 写 failReason)
+    let done = 0
+    const results = await Promise.all(
+      BUILTIN_SYMBOLS.map(async (sym) => {
+        const row = await fetchOne(sym)
+        done++
+        progress.value = Math.round((done / total) * 100)
+        return row
+      })
+    )
+    rows.value = results
+    for (const row of results) {
       if (row.failReason) fail++
       else ok++
-      progress.value = Math.round(((i + 1) / total) * 100)
     }
 
     // 写当日快照
