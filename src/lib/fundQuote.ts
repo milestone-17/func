@@ -68,8 +68,8 @@ export function parsePingzhongDataTrend(value: unknown): number | null {
   return null
 }
 
-/** JSONP: 注入 script, 用唯一回调名拉取; 失败/超时 → null, 不抛 */
-function jsonpGet(buildUrl: (cb: string) => string, timeout: number): Promise<unknown> {
+/** JSONP: 注入 script, 用唯一回调名拉取; 失败/超时 → null, 不抛 (导出供 indexChannel 复用) */
+export function jsonpGet(buildUrl: (cb: string) => string, timeout: number): Promise<unknown> {
   return new Promise((resolve) => {
     if (typeof document === 'undefined' || typeof window === 'undefined') {
       resolve(null)

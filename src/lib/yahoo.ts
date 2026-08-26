@@ -49,8 +49,8 @@ export async function loadBundledQuotes(symbol: string = '^NDX'): Promise<Bundle
 
 const NDX_CHART = (symbol: string) =>
   `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=2y&interval=1d`
-// 公共 CORS 代理链 (逐个尝试; 这些服务不稳定, 失败属正常)
-const PROXIES = [
+// 公共 CORS 代理链 (逐个尝试; 这些服务不稳定, 失败属正常) (导出供 indexChannel 复用)
+export const PROXIES = [
   (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
   (u: string) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
   (u: string) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`
@@ -104,8 +104,8 @@ export interface HoldingPrice {
 /** 东财 push2 股票接口公开固定参数 (非密钥) */
 const EASTMONEY_UT = 'fa5fd1943c7b386f172d6893dbfba10b'
 
-/** fetch 带超时 (浏览器默认 fetch 无超时, 公共代理可能挂起, 阻塞批量刷新) */
-async function fetchWithTimeout(url: string, ms: number): Promise<Response> {
+/** fetch 带超时 (浏览器默认 fetch 无超时, 公共代理可能挂起, 阻塞批量刷新) (导出供 indexChannel 复用) */
+export async function fetchWithTimeout(url: string, ms: number): Promise<Response> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), ms)
   try {

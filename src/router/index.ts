@@ -9,6 +9,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/permanent', name: 'permanent', component: () => import('@/pages/Permanent.vue') },
   { path: '/dca', name: 'dca', component: () => import('@/pages/Dca.vue') },
   { path: '/suggest', name: 'suggest', component: () => import('@/pages/Suggest.vue') },
+  { path: '/channel', name: 'channel', component: () => import('@/pages/Channel.vue') },
   { path: '/settings', name: 'settings', component: () => import('@/pages/Settings.vue') }
 ]
 
