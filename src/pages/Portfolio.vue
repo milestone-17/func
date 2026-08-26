@@ -8,6 +8,10 @@
             <svg class="h-4 w-4" :class="autoRefreshing ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
             {{ autoRefreshing ? '拉取中' : '拉取全部' }}
           </button>
+          <button @click="fetchWeekMaAll" :disabled="weekMa.loading" class="btn-ghost">
+            <svg class="h-4 w-4" :class="weekMa.loading ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+            {{ weekMa.loading ? `周线 ${weekMa.progress}/${weekMa.total}` : '周线状态' }}
+          </button>
           <button @click="openCreate()" class="btn-primary">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             新增
@@ -31,6 +35,10 @@
 
       <!-- 拉取状态提示 -->
       <div v-if="syncMsg" class="rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">{{ syncMsg }}</div>
+      <!-- 周线状态提示 (拉取失败 / 引导) -->
+      <div v-if="weekMaMsg" class="rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">{{ weekMaMsg }}</div>
+      <p v-else-if="portfolio.holdings.length > 0 && !weekMa.hasAnyData && !weekMa.loading"
+         class="text-[11px] text-ink3">点击「周线状态」可拉取各持仓当前处于 20/30/60 周线的位置</p>
 
       <!-- 分类筛选 -->
       <div class="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
@@ -86,6 +94,9 @@
             <div class="money text-sm font-semibold">{{ h.currentPrice != null ? fenToYuan(h.currentPrice).toFixed(2) : '—' }}</div>
           </div>
         </div>
+
+        <!-- 周线状态徽章 (20/30/60 周线上·线下) -->
+        <WeekMaBadges v-if="weekMa.rowOf(h.id)" :row="weekMa.rowOf(h.id)!" @retry="retryWeekMa(h)" />
 
         <!-- 盈亏 -->
         <div v-if="h.currentPrice != null" class="flex items-center justify-between rounded-xl px-3 py-2"
@@ -280,8 +291,10 @@ import { useRoute, useRouter } from 'vue-router'
 import AppShell from '@/components/AppShell.vue'
 import AmountInput from '@/components/AmountInput.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import WeekMaBadges from '@/components/WeekMaBadges.vue'
 import { usePortfolioStore } from '@/stores/portfolio'
 import { useSettingsStore } from '@/stores/settings'
+import { useWeekMaStore } from '@/stores/weekMa'
 import { formatYuan, fenToYuan, yuanToFen } from '@/lib/money'
 import { inferCategory } from '@/lib/category'
 import { confirmDateOf } from '@/lib/settlement'
@@ -295,6 +308,7 @@ interface Trading { mode: TradeMode; holding: HoldingView; input: TradeInput }
 
 const portfolio = usePortfolioStore()
 const settings = useSettingsStore()
+const weekMa = useWeekMaStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -348,6 +362,8 @@ function categoryLabel(c: HoldingCategory) {
 
 onMounted(async () => {
   if (!settings.loaded) await settings.load()
+  // 周线状态快照回显 (本地缓存, 不发请求)
+  weekMa.loadFromCache()
   await portfolio.refresh()
   syncDrafts()
   maybeOpenFromQuery()
@@ -413,6 +429,27 @@ async function refreshPrice(h: any) {
 async function commitPrice(id: string) {
   const v = priceDrafts.value[id]
   if (v != null && v > 0) await portfolio.updatePrice(id, yuanToFen(v))
+}
+
+// ---- 周线状态 (20/30/60 周线线上·线下) ----
+const weekMaMsg = ref('')
+
+async function fetchWeekMaAll() {
+  weekMaMsg.value = ''
+  const r = await weekMa.fetchAll(portfolio.holdings.map(h => ({ id: h.id, symbol: h.symbol, name: h.name })))
+  if (r === null) {
+    if (portfolio.holdings.length === 0) weekMaMsg.value = '暂无持仓可拉取周线状态'
+    return
+  }
+  if (r.ok === 0 && r.fail > 0) {
+    weekMaMsg.value = '周线状态拉取失败,可点击持仓卡片内「重试」单独重拉'
+  } else if (r.fail > 0) {
+    weekMaMsg.value = `周线状态: 成功 ${r.ok} 只, ${r.fail} 只失败(可单只重试)`
+  }
+}
+
+async function retryWeekMa(h: HoldingView) {
+  await weekMa.retryOne({ id: h.id, symbol: h.symbol, name: h.name })
 }
 
 const creating = ref(false)

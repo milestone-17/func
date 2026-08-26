@@ -206,6 +206,28 @@ export async function fetchHoldingPrices(
   return results
 }
 
+/**
+ * 拉取美股/ETF 周线收盘 (range=5y&interval=1wk, 覆盖 60 周均线所需历史)。
+ * 直连 + 代理链逐个尝试; 全部失败返回 null, 不抛。
+ * 不足 60 根也返回 (新股/新 ETF 由上层按 weekCount 走"数据不足"), 仅空解析视为失败。
+ */
+export async function fetchWeeklyBars(symbol: string, timeout = 10000): Promise<{ date: string; close: number }[] | null> {
+  const chart = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5y&interval=1wk`
+  const urls = [chart, ...PROXIES.map(p => p(chart))]
+  for (const url of urls) {
+    try {
+      const res = await fetchWithTimeout(url, timeout)
+      if (!res.ok) continue
+      const json = await res.json()
+      const bars = parseYahooChart(json)
+      if (bars.length > 0) return bars
+    } catch {
+      // 试下一个
+    }
+  }
+  return null
+}
+
 /** 拉取单只美股最新收盘价 (用于持仓现价刷新; 浏览器里可能因 CORS 失败)。各源并行、各自限时 */
 export async function fetchLiveLatestPrice(symbol: string): Promise<number | null> {
   const enc = encodeURIComponent(symbol)
