@@ -1,32 +1,69 @@
 <template>
   <div class="min-h-screen bg-canvas">
-    <!-- 顶部 -->
-    <header class="sticky top-0 z-30 border-b border-line bg-surface/85 backdrop-blur-md">
+    <!-- 桌面侧边栏 -->
+    <aside class="hidden md:flex fixed inset-y-0 left-0 z-40 w-56 flex-col border-r border-line bg-surface">
+      <div class="flex items-center gap-2.5 h-14 px-5 border-b border-line">
+        <span class="grid h-7 w-7 place-items-center rounded-lg bg-brand text-white text-xs font-bold shadow-sm">¥</span>
+        <h1 class="font-semibold text-[15px] tracking-tight">本地财务</h1>
+      </div>
+      <nav class="flex-1 overflow-y-auto px-2.5 py-3 space-y-0.5">
+        <RouterLink
+          v-for="tab in tabs"
+          :key="tab.to"
+          :to="tab.to"
+          :exact="tab.to === '/'"
+          custom
+          v-slot="{ isActive, href, navigate }"
+        >
+          <a
+            :href="href"
+            @click="navigate"
+            class="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors"
+            :class="isActive ? 'bg-brand-soft text-brand-700 dark:text-brand font-semibold' : 'text-ink2 hover:bg-surface2 hover:text-ink'"
+          >
+            <svg class="h-[17px] w-[17px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" v-html="tab.icon" />
+            {{ tab.label }}
+          </a>
+        </RouterLink>
+      </nav>
+      <div class="border-t border-line px-2.5 py-3 space-y-0.5">
+        <button v-if="installable" @click="install" class="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-ink2 hover:bg-surface2">
+          <svg class="h-[17px] w-[17px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          安装应用
+        </button>
+        <RouterLink to="/settings" class="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-ink2 hover:bg-surface2 hover:text-ink">
+          <svg class="h-[17px] w-[17px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS.settings" />
+          设置
+        </RouterLink>
+      </div>
+    </aside>
+
+    <!-- 移动端顶栏 -->
+    <header class="md:hidden sticky top-0 z-30 border-b border-line bg-surface/85 backdrop-blur-md">
       <div class="mx-auto max-w-md px-4 h-14 flex items-center justify-between">
         <div class="flex items-center gap-2.5">
           <span class="grid h-6.5 w-6.5 place-items-center rounded-lg bg-brand text-white text-[11px] font-bold shadow-sm">¥</span>
           <h1 class="font-semibold text-[15px] tracking-tight">本地财务</h1>
         </div>
-        <div class="flex items-center gap-1">
-          <button v-if="installable" @click="install" class="btn-ghost !px-2.5 !py-1 !text-xs">安装</button>
-          <RouterLink
-            to="/settings"
-            class="grid h-9 w-9 place-items-center rounded-xl text-ink2 transition hover:bg-surface2 active:scale-95"
-            aria-label="设置"
-          >
-            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS.settings" />
-          </RouterLink>
-        </div>
+        <RouterLink
+          to="/settings"
+          class="grid h-9 w-9 place-items-center rounded-xl text-ink2 transition hover:bg-surface2 active:scale-95"
+          aria-label="设置"
+        >
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS.settings" />
+        </RouterLink>
       </div>
     </header>
 
-    <!-- 内容 -->
-    <main class="mx-auto max-w-md px-4 pt-4 pb-28">
-      <slot />
+    <!-- 内容: 桌面偏移侧边栏, 宽容器 -->
+    <main class="md:pl-56">
+      <div class="mx-auto max-w-5xl px-4 md:px-8 pt-4 pb-28 md:pb-10">
+        <slot />
+      </div>
     </main>
 
-    <!-- 底部导航 -->
-    <nav class="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/92 backdrop-blur-md">
+    <!-- 移动端底部导航 -->
+    <nav class="md:hidden fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/92 backdrop-blur-md">
       <div class="mx-auto max-w-md grid grid-cols-8">
         <RouterLink v-for="tab in tabs" :key="tab.to" :to="tab.to" :exact="tab.to === '/'" custom v-slot="{ isActive, href, navigate }">
           <a

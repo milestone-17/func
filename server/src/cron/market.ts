@@ -1,24 +1,37 @@
 import cron from 'node-cron'
 import { prisma } from '../lib/prisma'
-import { fetchAllIndices } from '../lib/market-fetcher'
+import { fetchWithFallback, SOURCE_PRIORITY, type SourceId } from '../lib/market-fetcher'
 
 let retryTimer: NodeJS.Timeout | null = null
+let currentPriority: SourceId[] = [...SOURCE_PRIORITY]
 
-export async function syncMarketNow(): Promise<number> {
-  const rows = await fetchAllIndices()
-  if (!rows.length) {
-    console.warn('[market] 本次未抓到任何数据, 保留旧数据')
-    return 0
+/** 管理后台调整源优先级时调用 */
+export function setSourcePriority(priority: SourceId[]): void {
+  const valid = priority.filter(p => SOURCE_PRIORITY.includes(p))
+  if (valid.length === SOURCE_PRIORITY.length) currentPriority = valid
+}
+
+export function getSourcePriority(): SourceId[] {
+  return [...currentPriority]
+}
+
+export async function syncMarketNow(): Promise<{ rows: number; source: SourceId | null }> {
+  const result = await fetchWithFallback(currentPriority)
+  if (!result) {
+    console.warn('[market] 全部源失败, 保留旧数据')
+    return { rows: 0, source: null }
   }
-  for (const r of rows) {
+  for (const r of result.rows) {
+    const data = r.data as Record<string, unknown>
+    data.source = result.source
     await prisma.indexData.upsert({
       where: { id: `${r.symbol}::${r.date}` },
       create: { id: `${r.symbol}::${r.date}`, symbol: r.symbol, date: r.date, data: r.data as object },
       update: { data: r.data as object }
     })
   }
-  console.log(`[market] 写入 ${rows.length} 行行情数据`)
-  return rows.length
+  console.log(`[market] 写入 ${result.rows.length} 行 (source=${result.source})`)
+  return { rows: result.rows.length, source: result.source }
 }
 
 /** 失败后 30 分钟重试直至成功 (单次链, 不叠加) */
@@ -27,7 +40,7 @@ function scheduleRetry(): void {
   retryTimer = setTimeout(() => {
     retryTimer = null
     syncMarketNow()
-      .then(n => { if (n === 0) scheduleRetry() })
+      .then(r => { if (r.rows === 0) scheduleRetry() })
       .catch(e => {
         console.error('[market] 重试失败:', e.message)
         scheduleRetry()
@@ -39,7 +52,7 @@ export function startMarketCron(): void {
   // UTC 22:17 周一~周五 ≈ 北京时间交易日次日 06:17 (美股收盘后)
   cron.schedule('17 22 * * 1-5', () => {
     syncMarketNow()
-      .then(n => { if (n === 0) scheduleRetry() })
+      .then(r => { if (r.rows === 0) scheduleRetry() })
       .catch(e => {
         console.error('[market] cron 执行失败:', e.message)
         scheduleRetry()
@@ -49,7 +62,7 @@ export function startMarketCron(): void {
   prisma.indexData.count().then(n => {
     if (n === 0) {
       syncMarketNow()
-        .then(rows => { if (rows === 0) scheduleRetry() })
+        .then(r => { if (r.rows === 0) scheduleRetry() })
         .catch(e => {
           console.error('[market] 初始抓取失败:', e.message)
           scheduleRetry()

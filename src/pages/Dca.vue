@@ -1,13 +1,67 @@
 <template>
   <AppShell>
     <div class="space-y-4">
-      <!-- 标的切换 -->
-      <div class="flex gap-1.5">
-        <button v-for="sym in symbols" :key="sym" @click="selectSymbol(sym)"
-          :class="['flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+      <!-- 标的切换: 内置指数 + 自选基金 -->
+      <div class="flex gap-1.5 flex-wrap">
+        <button v-for="sym in dca.allSymbols()" :key="sym" @click="selectSymbol(sym)"
+          :class="['rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                    dca.activeSymbol === sym ? 'bg-brand text-white' : 'bg-surface2 text-ink2 hover:text-ink']">
           {{ label(sym) }}
         </button>
+        <button @click="showAddFund = true"
+          class="rounded-lg px-3 py-2 text-sm font-medium border border-dashed border-line text-ink3 hover:text-brand hover:border-brand transition-colors">
+          + 添加基金
+        </button>
+        <button v-if="isFund" @click="removeCurrentFund"
+          class="rounded-lg px-3 py-2 text-sm text-ink3 hover:text-neg transition-colors"
+          title="从自选中移除">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- 添加基金弹层 -->
+      <div v-if="showAddFund" class="sheet" @click.self="showAddFund = false">
+        <div class="sheet-panel space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="font-semibold">添加自选基金</h3>
+            <button @click="showAddFund = false" class="text-ink3">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="relative">
+            <input v-model="searchKey" @input="onSearch" placeholder="输入基金代码或名称, 如 001594 / 纳斯达克"
+              class="input" />
+            <div v-if="searching" class="absolute right-3 top-2.5 text-ink3 text-xs">搜索中…</div>
+          </div>
+          <p class="text-[11px] text-ink3">数据来源: 东方财富, 服务端实时获取并校验净值可得性</p>
+          <div v-if="searchError" class="text-xs text-neg">{{ searchError }}</div>
+          <div class="max-h-72 overflow-y-auto divide-y divide-line rounded-xl border border-line">
+            <button v-for="it in searchResults" :key="it.code" @click="pickFund(it)"
+              class="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-surface2 transition-colors">
+              <span>
+                <span class="text-sm font-medium">{{ it.name }}</span>
+                <span class="ml-2 text-xs text-ink3">{{ it.code }}</span>
+              </span>
+              <span class="text-[11px] text-ink3">{{ it.type }}</span>
+            </button>
+            <div v-if="!searching && searchKey.length >= 2 && searchResults.length === 0" class="px-3 py-4 text-center text-xs text-ink3">
+              无匹配结果
+            </div>
+          </div>
+          <div v-if="addMsg" :class="['text-xs', addOk ? 'text-pos' : 'text-neg']">{{ addMsg }}</div>
+          <!-- 已有自选 -->
+          <div v-if="dca.myFunds.length > 0">
+            <div class="label mb-1">已自选 ({{ dca.myFunds.length }})</div>
+            <div class="flex flex-wrap gap-1.5">
+              <span v-for="f in dca.myFunds" :key="f.code" class="inline-flex items-center gap-1 rounded-full bg-surface2 px-2.5 py-1 text-xs">
+                {{ f.name || f.code }}
+                <button @click="removeFundByCode(f.code)" class="text-ink3 hover:text-neg">
+                  <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 周度自动执行结果提示 -->
@@ -19,7 +73,7 @@
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-lg font-bold tracking-tight">智能定投 · {{ label(dca.activeSymbol) }}</h2>
-          <p class="text-xs text-ink3">均线偏离策略 · MA120 / MA180 / MA250</p>
+          <p class="text-xs text-ink3">{{ isFund ? '基金净值均线偏离策略 · MA120 / MA180 / MA250' : '均线偏离策略 · MA120 / MA180 / MA250' }}</p>
         </div>
         <button v-if="dca.config" @click="sync" :disabled="syncing" class="btn-ghost">
           <svg class="h-4 w-4" :class="syncing ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -45,8 +99,8 @@
         <section class="card card-pad">
           <div class="flex items-end justify-between">
             <div>
-              <div class="text-xs text-ink3">最新收盘</div>
-              <div class="money text-3xl font-bold tracking-tight">{{ dca.lastClose != null ? dca.lastClose.toFixed(2) : '—' }}</div>
+              <div class="text-xs text-ink3">{{ isFund ? '最新净值' : '最新收盘' }}</div>
+              <div class="money text-3xl font-bold tracking-tight">{{ dca.lastClose != null ? dca.lastClose.toFixed(4) : '—' }}</div>
             </div>
             <Badge :tone="devTone">
               {{ dca.deviationPct != null ? (dca.deviationPct > 0 ? '+' : '') + dca.deviationPct.toFixed(2) + '%' : '—' }}
@@ -55,15 +109,15 @@
           <div class="mt-3 grid grid-cols-2 gap-2">
             <div class="rounded-xl bg-surface2 px-2.5 py-2">
               <div class="text-[11px] text-ink3">MA120 半年线</div>
-              <div class="money text-sm font-semibold">{{ ma120 != null ? ma120.toFixed(2) : '—' }}</div>
+              <div class="money text-sm font-semibold">{{ ma120 != null ? ma120.toFixed(4) : '—' }}</div>
             </div>
             <div class="rounded-xl bg-surface2 px-2.5 py-2">
               <div class="text-[11px] text-ink3">MA180</div>
-              <div class="money text-sm font-semibold">{{ ma180 != null ? ma180.toFixed(2) : '—' }}</div>
+              <div class="money text-sm font-semibold">{{ ma180 != null ? ma180.toFixed(4) : '—' }}</div>
             </div>
             <div class="rounded-xl bg-surface2 px-2.5 py-2">
               <div class="text-[11px] text-ink3">MA250 年线</div>
-              <div class="money text-sm font-semibold">{{ dca.ma250 != null ? dca.ma250.toFixed(2) : '—' }}</div>
+              <div class="money text-sm font-semibold">{{ dca.ma250 != null ? dca.ma250.toFixed(4) : '—' }}</div>
             </div>
             <div class="rounded-xl bg-surface2 px-2.5 py-2">
               <div class="text-[11px] text-ink3">当前档位</div>
@@ -73,7 +127,8 @@
           <div v-if="dca.syncError" class="mt-2 text-xs text-neg">同步失败: {{ dca.syncError }}</div>
           <div class="mt-1 flex items-center gap-2 text-[11px] text-ink3">
             <span v-if="dca.lastSyncAt">更新于 {{ fmtTime(dca.lastSyncAt) }}</span>
-            <Badge v-if="dca.dataSource === 'cache'" tone="amber">预置数据</Badge>
+            <Badge v-if="dca.dataSource === 'fund'" tone="green">东财净值</Badge>
+            <Badge v-else-if="dca.dataSource === 'cache'" tone="amber">预置数据</Badge>
             <Badge v-else-if="dca.dataSource === 'yahoo'" tone="green">实时</Badge>
           </div>
         </section>
@@ -81,7 +136,7 @@
         <!-- 价格 vs 均线 曲线 -->
         <section v-if="chartLabels.length > 1" class="card card-pad">
           <div class="flex items-center justify-between mb-1">
-            <span class="section-title">价格 vs 均线 (MA120 / MA180 / MA250)</span>
+            <span class="section-title">{{ isFund ? '净值 vs 均线 (MA120 / MA180 / MA250)' : '价格 vs 均线 (MA120 / MA180 / MA250)' }}</span>
             <span class="text-[11px] text-ink3">近 {{ chartLabels.length }} 日</span>
           </div>
           <LineChart :labels="chartLabels" :series="chartSeries" :height="200" />
@@ -138,8 +193,8 @@
           </div>
         </section>
 
-        <!-- 手动录入 (折叠) -->
-        <section class="card card-pad">
+        <!-- 手动录入 (仅指数标的, 基金净值以服务端为准) -->
+        <section v-if="!isFund" class="card card-pad">
           <button class="flex w-full items-center justify-between" @click="showManual = !showManual">
             <span class="section-title">手动录入指数数据</span>
             <svg class="h-4 w-4 text-ink3 transition-transform" :class="showManual ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
@@ -209,9 +264,10 @@ import Badge from '@/components/Badge.vue'
 import LineChart from '@/components/LineChart.vue'
 import DcaSuggestionCard from '@/components/DcaSuggestionCard.vue'
 import DailyDcaCard from '@/components/DailyDcaCard.vue'
-import { useDcaStore, DCA_SYMBOLS, DCA_LABELS } from '@/stores/dca'
+import { useDcaStore, DCA_LABELS, isFundSymbol, fundCodeOf } from '@/stores/dca'
 import { useDailyDcaStore } from '@/stores/dailyDca'
 import { usePortfolioStore } from '@/stores/portfolio'
+import { fundApi, type FundSearchItem } from '@/repos/fundRepo'
 import { fenToYuan, yuanToFen } from '@/lib/money'
 import { rollingMA } from '@/lib/ma'
 
@@ -219,8 +275,8 @@ const dca = useDcaStore()
 const portfolio = usePortfolioStore()
 const dailyDca = useDailyDcaStore()
 const route = useRoute()
-const symbols = DCA_SYMBOLS
 function label(sym: string) { return DCA_LABELS[sym] ?? sym }
+const isFund = computed(() => isFundSymbol(dca.activeSymbol))
 
 const autoExecMsg = ref('')
 
@@ -245,6 +301,62 @@ onMounted(async () => {
 
 function selectSymbol(sym: string) {
   dca.setActive(sym)
+}
+
+// ---- 自选基金: 搜索/添加/移除 ----
+const showAddFund = ref(false)
+const searchKey = ref('')
+const searching = ref(false)
+const searchResults = ref<FundSearchItem[]>([])
+const searchError = ref('')
+const addMsg = ref('')
+const addOk = ref(false)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+function onSearch() {
+  searchError.value = ''
+  if (searchTimer) clearTimeout(searchTimer)
+  const key = searchKey.value.trim()
+  if (key.length < 2) { searchResults.value = []; return }
+  searching.value = true
+  searchTimer = setTimeout(async () => {
+    try {
+      searchResults.value = await fundApi.search(key)
+      searchError.value = ''
+    } catch (e) {
+      searchError.value = `搜索失败: ${(e as Error).message}`
+      searchResults.value = []
+    } finally {
+      searching.value = false
+    }
+  }, 350)
+}
+
+async function pickFund(it: FundSearchItem) {
+  addMsg.value = ''
+  addOk.value = false
+  const r = await dca.addFund(it.code, it.name)
+  if (r.ok) {
+    addOk.value = true
+    addMsg.value = `已添加 ${it.name} (${it.code}), 正在加载净值…`
+    await dca.loadSymbol('fund:' + it.code)
+    dca.setActive('fund:' + it.code)
+    setTimeout(() => { showAddFund.value = false; addMsg.value = '' }, 900)
+  } else {
+    addOk.value = false
+    addMsg.value = r.error || '添加失败'
+  }
+}
+
+async function removeFundByCode(code: string) {
+  await dca.removeFund(code)
+}
+
+async function removeCurrentFund() {
+  const code = fundCodeOf(dca.activeSymbol)
+  if (code && confirm(`确定从自选中移除该基金? (定投配置将保留)`)) {
+    await dca.removeFund(code)
+  }
 }
 
 const syncing = ref(false)
@@ -274,7 +386,7 @@ const chartSeries = computed(() => {
   const ma250 = rollingMA(closes, 250)
   const start = Math.max(0, s.length - SHOW_DAYS)
   return [
-    { label: '收盘价', data: closes.slice(start), color: '#10b981', fill: true },
+    { label: isFund.value ? '净值' : '收盘价', data: closes.slice(start), color: '#10b981', fill: true },
     { label: 'MA120 半年线', data: ma120.slice(start), color: '#6366f1' },
     { label: 'MA180', data: ma180.slice(start), color: '#a855f7' },
     { label: 'MA250 年线', data: ma250.slice(start), color: '#f59e0b' }

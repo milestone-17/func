@@ -74,7 +74,7 @@ async function fetchMonthlyFromEm(secid: string): Promise<MonthlyBarDto[]> {
 }
 
 /** Yahoo chart 日K (美股/ETF 现价与周线; 服务器直连可能 429, 由缓存与前端兜底) */
-async function fetchYahooChart(symbol: string, range: string, interval: string): Promise<Array<{ date: string; close: number }>> {
+export async function fetchYahooChart(symbol: string, range: string, interval: string): Promise<Array<{ date: string; close: number }>> {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`
   const res = await fetch(url, { headers: UA })
   if (!res.ok) throw new Error(`Yahoo HTTP ${res.status}`)
@@ -96,7 +96,7 @@ async function fetchYahooChart(symbol: string, range: string, interval: string):
 }
 
 /** 腾讯美股日K兜底 (Yahoo 429 时用; 仅支持字母代码, 纳指100=usNDX 等指数代码另有映射) */
-async function fetchTencentUsDaily(symbol: string): Promise<Array<{ date: string; close: number }>> {
+export async function fetchTencentUsDaily(symbol: string): Promise<Array<{ date: string; close: number }>> {
   const url = `https://web.ifzq.gtimg.cn/appstock/app/newfqkline/get?param=${encodeURIComponent(symbol.toLowerCase())},day,,,660,qfq`
   const res = await fetch(url, { headers: UA })
   if (!res.ok) throw new Error(`腾讯 HTTP ${res.status}`)

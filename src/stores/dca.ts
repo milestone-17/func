@@ -5,6 +5,7 @@ import { indexDataRepo } from '@/repos/indexDataRepo'
 import { dcaExecutionRepo } from '@/repos/dcaExecutionRepo'
 import { holdingRepo } from '@/repos/holdingRepo'
 import { holdingTxnRepo } from '@/repos/holdingTxnRepo'
+import { dcaFundRepo, fundApi } from '@/repos/fundRepo'
 import { loadBundledQuotes, fetchLiveQuotes, barsToIndexData } from '@/lib/yahoo'
 import { computeMA, computeMA250 } from '@/lib/ma'
 import { computeDeviation } from '@/lib/deviation'
@@ -22,11 +23,23 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-/** 定投支持的标的 (均按均线偏离策略) */
+/** 内置指数标的 (均按均线偏离策略) */
 export const DCA_SYMBOLS = ['^NDX', '^GSPC'] as const
 export const DCA_LABELS: Record<string, string> = {
   '^NDX': '纳斯达克100',
   '^GSPC': '标普500'
+}
+
+/** 自选基金标的前缀: fund:001594 */
+export const FUND_PREFIX = 'fund:'
+export function isFundSymbol(symbol: string): boolean {
+  return symbol.startsWith(FUND_PREFIX)
+}
+export function fundCodeOf(symbol: string): string {
+  return isFundSymbol(symbol) ? symbol.slice(FUND_PREFIX.length) : ''
+}
+export function labelOf(symbol: string): string {
+  return DCA_LABELS[symbol] ?? symbol
 }
 
 interface SymbolState {
@@ -36,7 +49,7 @@ interface SymbolState {
   suggestions: Record<1 | 2 | 3 | 4, SuggestionResult | null>
   lastSyncAt: string | null
   syncError: string | null
-  dataSource: 'yahoo' | 'cache' | null
+  dataSource: 'yahoo' | 'cache' | 'fund' | null
 }
 
 function emptyState(): SymbolState {
@@ -51,6 +64,9 @@ export const useDcaStore = defineStore('dca', () => {
   const activeSymbol = ref<string>('^NDX')
   const states = ref<Record<string, SymbolState>>({})
   for (const s of DCA_SYMBOLS) states.value[s] = emptyState()
+  /** 用户自选基金列表 (id/code/name) */
+  const myFunds = ref<Array<{ id: string; code: string; name: string }>>([])
+  const fundsLoaded = ref(false)
 
   // ---- 单 symbol 派生值 ----
   function maOf(symbol: string, period: number): number | null {
@@ -86,18 +102,99 @@ export const useDcaStore = defineStore('dca', () => {
 
   function setActive(symbol: string) { activeSymbol.value = symbol }
 
+  /** 加载用户自选基金列表, 并为每个基金初始化 state */
+  async function loadMyFunds(): Promise<void> {
+    try {
+      const items = await dcaFundRepo.list()
+      myFunds.value = items.map(f => ({ id: f.id, code: f.code, name: f.name }))
+    } catch { myFunds.value = [] }
+    for (const f of myFunds.value) {
+      const sym = FUND_PREFIX + f.code
+      if (!states.value[sym]) states.value = { ...states.value, [sym]: emptyState() }
+    }
+    fundsLoaded.value = true
+  }
+
+  /** 添加自选基金 (搜索结果 → 服务端 dcaFunds + 本地 state) */
+  async function addFund(code: string, name: string): Promise<{ ok: boolean; error?: string }> {
+    const trim = code.trim()
+    if (!/^\d{6}$/.test(trim)) return { ok: false, error: '基金代码须为 6 位数字' }
+    if (myFunds.value.some(f => f.code === trim)) return { ok: false, error: '该基金已在自选列表' }
+    // 预检: 服务端能取到历史净值才允许添加 (数据准确性保证)
+    let bars: Array<{ date: string; nav: number }> = []
+    try {
+      const r = await fundApi.history(trim, 500)
+      bars = r.bars || []
+    } catch (e) {
+      return { ok: false, error: `净值数据获取失败: ${(e as Error).message}` }
+    }
+    if (bars.length < 30) return { ok: false, error: `该基金历史净值不足 (${bars.length} 条), 无法支撑均线策略` }
+    try {
+      const saved = await dcaFundRepo.add({ code: trim, name })
+      myFunds.value = [...myFunds.value, { id: saved.id, code: saved.code, name: saved.name }]
+    } catch (e) {
+      return { ok: false, error: `保存失败: ${(e as Error).message}` }
+    }
+    const sym = FUND_PREFIX + trim
+    if (!states.value[sym]) states.value = { ...states.value, [sym]: emptyState() }
+    return { ok: true }
+  }
+
+  /** 移除自选基金 (软删除; 关联 config 保留但标的不可再选) */
+  async function removeFund(code: string): Promise<void> {
+    const f = myFunds.value.find(x => x.code === code)
+    if (f) {
+      try { await dcaFundRepo.softDelete(f.id) } catch { /* 尽力 */ }
+      myFunds.value = myFunds.value.filter(x => x.code !== code)
+    }
+    const sym = FUND_PREFIX + code
+    const { [sym]: _removed, ...rest } = states.value
+    states.value = rest
+    if (activeSymbol.value === sym) activeSymbol.value = '^NDX'
+  }
+
+  /** 基金净值序列 → IndexData 行写入内存 (symbol = fund:CODE) */
+  function fundBarsToSeries(code: string, bars: Array<{ date: string; nav: number }>): IndexData[] {
+    return bars.map(b => ({
+      symbol: FUND_PREFIX + code,
+      date: b.date,
+      close: b.nav,
+      ma250: null,
+      source: 'cache',
+      fetchedAt: Date.now()
+    }))
+  }
+
   async function loadSymbol(symbol: string) {
-    const st = states.value[symbol] ?? emptyState()
+    if (states.value[symbol] === undefined) {
+      states.value = { ...states.value, [symbol]: emptyState() }
+    }
+    const st = states.value[symbol]
     st.config = (await dcaConfigRepo.getBySymbol(symbol)) || null
-    let s = await indexDataRepo.listBySymbol(symbol)
-    // 首次进入: 用打包进站点的预置行情初始化 (同源, 必成功)
-    if (s.length < 250) {
-      const bundled = await loadBundledQuotes(symbol)
-      if (bundled && Array.isArray(bundled.bars) && bundled.bars.length >= 250) {
-        for (const r of barsToIndexData(bundled.bars, 'cache', symbol)) await indexDataRepo.put(r)
-        s = await indexDataRepo.listBySymbol(symbol)
-        st.lastSyncAt = new Date(bundled.fetchedAt).toISOString()
-        st.dataSource = 'cache'
+    let s: IndexData[]
+    if (isFundSymbol(symbol)) {
+      // 基金标的: 从服务端拉净值历史 (服务端有 DB 缓存 + 内存缓存)
+      const code = fundCodeOf(symbol)
+      try {
+        const r = await fundApi.history(code, 500)
+        s = fundBarsToSeries(code, r.bars)
+        st.dataSource = 'fund'
+        st.lastSyncAt = new Date().toISOString()
+      } catch (e) {
+        st.syncError = `净值获取失败: ${(e as Error).message}`
+        s = []
+      }
+    } else {
+      s = await indexDataRepo.listBySymbol(symbol)
+      // 首次进入: 用打包进站点的预置行情初始化 (同源, 必成功)
+      if (s.length < 250) {
+        const bundled = await loadBundledQuotes(symbol)
+        if (bundled && Array.isArray(bundled.bars) && bundled.bars.length >= 250) {
+          for (const r of barsToIndexData(bundled.bars, 'cache', symbol)) await indexDataRepo.put(r)
+          s = await indexDataRepo.listBySymbol(symbol)
+          st.lastSyncAt = new Date(bundled.fetchedAt).toISOString()
+          st.dataSource = 'cache'
+        }
       }
     }
     st.series = s
@@ -106,6 +203,7 @@ export const useDcaStore = defineStore('dca', () => {
   }
 
   async function load() {
+    await loadMyFunds()
     for (const s of DCA_SYMBOLS) await loadSymbol(s)
   }
 
@@ -120,7 +218,25 @@ export const useDcaStore = defineStore('dca', () => {
     const symbol = activeSymbol.value
     const st = states.value[symbol]
     if (!st) return { ok: false, error: '未知标的' }
-    let next = { ...st, syncError: null as string | null }
+    if (isFundSymbol(symbol)) {
+      // 基金: 直接走服务端代理 (服务端缓存 10min + DB 增量, 保证最新)
+      st.syncError = null
+      const code = fundCodeOf(symbol)
+      try {
+        const r = await fundApi.history(code, 500)
+        st.series = fundBarsToSeries(code, r.bars)
+        st.lastSyncAt = new Date().toISOString()
+        st.dataSource = 'fund'
+      } catch (e) {
+        st.syncError = `净值同步失败: ${(e as Error).message}`
+        states.value = { ...states.value, [symbol]: { ...st } }
+        return { ok: false, error: st.syncError }
+      }
+      states.value = { ...states.value, [symbol]: { ...st } }
+      await recomputeSymbol(symbol)
+      return { ok: true }
+    }
+    const next = { ...st, syncError: null as string | null }
     // 1. 尝试实时拉取 (Yahoo via 代理链; 浏览器里常失败)
     let bars = await fetchLiveQuotes(symbol)
     let source: 'yahoo' | 'cache' = 'yahoo'
@@ -217,7 +333,7 @@ export const useDcaStore = defineStore('dca', () => {
     if (targetId) {
       const target = await holdingRepo.get(targetId)
       if (target && executedAmount > 0 && finalPrice > 0) {
-        // 优先用持仓自带的现价, 没有则用指数收盘价兜底
+        // 优先用持仓自带的现价, 没有则用标的收盘价/净值兜底
         const priceFen = target.currentPrice && target.currentPrice > 0
           ? target.currentPrice
           : Math.round(finalPrice * 100)
@@ -240,10 +356,8 @@ export const useDcaStore = defineStore('dca', () => {
   }
 
   /**
-   * 遍历全部 DCA 标的: 当 (month, weekIndex) 槽位无执行记录时按建议金额自动记账并落 buy 交易。
+   * 遍历全部 DCA 标的 (内置指数 + 自选基金): 当 (month, weekIndex) 槽位无执行记录时按建议金额自动记账并落 buy 交易。
    * 幂等: 同槽位重复调用不会重复落账 (依赖 dcaExecutionRepo.findBySlot)。
-   * 浏览器关闭/跨多日不会回溯, 仅在 onMounted 触发 (无后台服务)。
-   * 返回成功/跳过的执行明细供上层 toast。
    */
   async function runAutoExecutions(today?: string): Promise<{ executed: { symbol: string; weekIndex: 1 | 2 | 3 | 4; amount: number }[]; skipped: { symbol: string; weekIndex: 1 | 2 | 3 | 4; reason: string }[] }> {
     const todayStr = today ?? todayISO()
@@ -251,7 +365,7 @@ export const useDcaStore = defineStore('dca', () => {
     const wk = weekOfMonth(todayStr)
     const executed: { symbol: string; weekIndex: 1 | 2 | 3 | 4; amount: number }[] = []
     const skipped: { symbol: string; weekIndex: 1 | 2 | 3 | 4; reason: string }[] = []
-    for (const symbol of DCA_SYMBOLS) {
+    for (const symbol of allSymbols()) {
       const st = states.value[symbol]
       const cfg = st?.config
       if (!cfg) { skipped.push({ symbol, weekIndex: wk, reason: 'no-config' }); continue }
@@ -263,16 +377,24 @@ export const useDcaStore = defineStore('dca', () => {
         skipped.push({ symbol, weekIndex: wk, reason: 'no-suggestion' }); continue
       }
       // 切到 active symbol 让 recordExecution 用正确的 config
+      const prev = activeSymbol.value
       activeSymbol.value = symbol
       await recordExecution(wk, sug.suggestedAmount)
+      activeSymbol.value = prev
       executed.push({ symbol, weekIndex: wk, amount: sug.suggestedAmount })
     }
     return { executed, skipped }
   }
 
+  /** 全部可选标的: 内置指数 + 自选基金 */
+  function allSymbols(): string[] {
+    return [...DCA_SYMBOLS, ...myFunds.value.map(f => FUND_PREFIX + f.code)]
+  }
+
   return {
-    activeSymbol, states,
+    activeSymbol, states, myFunds, fundsLoaded,
     config, series, ma120, ma180, ma250, lastClose, deviationPct, bucket, suggestions, lastSyncAt, syncError, dataSource,
-    setActive, load, saveConfig, syncIndex, manualSetIndex, recomputeSymbol, recordExecution, runAutoExecutions
+    setActive, load, loadSymbol, loadMyFunds, addFund, removeFund, allSymbols,
+    saveConfig, syncIndex, manualSetIndex, recomputeSymbol, recordExecution, runAutoExecutions
   }
 })
