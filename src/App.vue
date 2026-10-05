@@ -1,26 +1,20 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
+import { onMounted } from 'vue'
 import { RouterView } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
-import { useLockStore } from '@/stores/lock'
+import { useAuthStore } from '@/stores/auth'
 import { useDailyDcaStore } from '@/stores/dailyDca'
-import { requestPersist } from '@/lib/persist'
-import LockScreen from '@/components/LockScreen.vue'
 
 const settings = useSettingsStore()
-const lock = useLockStore()
+const auth = useAuthStore()
 const dailyDca = useDailyDcaStore()
 
-const locked = computed(() => lock.hasPassword && !lock.unlocked)
-
 onMounted(async () => {
+  if (!auth.initialized) await auth.init()
+  if (!auth.isLoggedIn) return
   if (!settings.loaded) await settings.load()
   applyTheme()
-  // 异步申请持久化存储 (不阻塞、不抛错)
-  requestPersist()
-    .then(r => settings.save({ storagePersisted: r === 'granted' }))
-    .catch(() => { /* 忽略 */ })
-  // 每日定投: 打开应用时幂等校验并自动记账 (仅当日, 浏览器关闭不执行)
+  // 每日定投: 打开应用时幂等校验并自动记账 (仅当日)
   try {
     await dailyDca.load()
     await dailyDca.runIfPending()
@@ -36,6 +30,5 @@ function applyTheme() {
 </script>
 
 <template>
-  <LockScreen v-if="locked" />
-  <RouterView v-else />
+  <RouterView />
 </template>

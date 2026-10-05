@@ -1,34 +1,21 @@
-import { openDb } from '@/repos/db'
-import { newId, makeTimestamps, softDelete, touchUpdated } from '@/repos/base'
+import { makeRemoteRepo } from '@/repos/remote-base'
 import type { Category } from '@/types/ledger'
+
+const repo = makeRemoteRepo<Category>('categories')
 
 export const categoryRepo = {
   async add(input: Omit<Category, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>): Promise<Category> {
-    const db = await openDb()
-    const ts = makeTimestamps()
-    const c: Category = { id: newId(), ...input, ...ts }
-    await db.add('categories', c)
-    db.close()
-    return c
+    return repo.add(input)
   },
   async put(c: Category): Promise<Category> {
-    const db = await openDb()
-    const out = touchUpdated(c)
-    await db.put('categories', out)
-    db.close()
-    return out
+    return repo.put(c)
   },
   async list(): Promise<Category[]> {
-    const db = await openDb()
-    const all = await db.getAll('categories') as Category[]
-    db.close()
-    return all.filter(c => !c.deletedAt).sort((a, b) => a.order - b.order)
+    const all = await repo.list()
+    return all.sort((a, b) => a.order - b.order)
   },
   async softDelete(id: string): Promise<void> {
-    const db = await openDb()
-    const c = await db.get('categories', id) as Category | undefined
-    if (c) await db.put('categories', softDelete(c))
-    db.close()
+    return repo.softDelete(id)
   },
   /** 内置默认分类 seed (首次启动) */
   async seedIfEmpty(): Promise<void> {

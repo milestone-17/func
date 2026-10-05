@@ -1,41 +1,26 @@
-import { openDb } from '@/repos/db'
-import { newId, makeTimestamps, touchUpdated } from '@/repos/base'
+import { makeRemoteRepo } from '@/repos/remote-base'
 import type { DCAExecution } from '@/types/dca'
+
+const repo = makeRemoteRepo<DCAExecution>('dcaExecutions')
 
 export const dcaExecutionRepo = {
   async add(input: Omit<DCAExecution, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>): Promise<DCAExecution> {
-    const db = await openDb()
-    const ts = makeTimestamps()
-    const e: DCAExecution = { id: newId(), ...input, ...ts }
-    await db.add('dcaExecutions', e)
-    db.close()
-    return e
+    return repo.add(input)
   },
   async put(e: DCAExecution): Promise<DCAExecution> {
-    const db = await openDb()
-    const out = touchUpdated(e)
-    await db.put('dcaExecutions', out)
-    db.close()
-    return out
+    return repo.put(e)
   },
   async listByMonth(month: string): Promise<DCAExecution[]> {
-    const db = await openDb()
-    const all = await db.getAll('dcaExecutions') as DCAExecution[]
-    db.close()
-    return all.filter(e => e.month === month && !e.deletedAt)
-      .sort((a, b) => a.weekIndex - b.weekIndex || a.date.localeCompare(b.date))
+    const all = await repo.list({ month })
+    return all.sort((a, b) => a.weekIndex - b.weekIndex || a.date.localeCompare(b.date))
   },
   /** 按 configId+month+weekIndex 查重, 用于周度自动执行幂等判定 */
   async findBySlot(configId: string, month: string, weekIndex: number): Promise<DCAExecution | undefined> {
-    const db = await openDb()
-    const all = await db.getAll('dcaExecutions') as DCAExecution[]
-    db.close()
-    return all.find(e => e.configId === configId && e.month === month && e.weekIndex === weekIndex && !e.deletedAt)
+    const all = await repo.list({ configId, month })
+    return all.find(e => e.weekIndex === weekIndex)
   },
   async listAll(): Promise<DCAExecution[]> {
-    const db = await openDb()
-    const all = await db.getAll('dcaExecutions') as DCAExecution[]
-    db.close()
-    return all.filter(e => !e.deletedAt).sort((a, b) => b.date.localeCompare(a.date))
+    const all = await repo.list()
+    return all.sort((a, b) => b.date.localeCompare(a.date))
   }
 }

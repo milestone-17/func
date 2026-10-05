@@ -1,4 +1,4 @@
-import { openDb } from '@/repos/db'
+import { api } from '@/lib/api'
 import type { AppSettings } from '@/types/settings'
 
 const SINGLETON_ID = 'app'
@@ -23,17 +23,17 @@ const DEFAULTS: AppSettings = {
 
 export const settingsRepo = {
   async get(): Promise<AppSettings> {
-    const db = await openDb()
-    const s = await db.get('settings', SINGLETON_ID) as AppSettings | undefined
-    db.close()
-    return s || { ...DEFAULTS, updatedAt: Date.now() }
+    try {
+      const r = await api.get<{ item: AppSettings }>('/api/settings/app')
+      return r.item
+    } catch {
+      return { ...DEFAULTS, updatedAt: Date.now() }
+    }
   },
   async save(s: Partial<AppSettings>): Promise<AppSettings> {
-    const db = await openDb()
-    const cur = (await db.get('settings', SINGLETON_ID) as AppSettings | undefined) || { ...DEFAULTS }
+    const cur = await this.get()
     const out: AppSettings = { ...cur, ...s, id: SINGLETON_ID, updatedAt: Date.now() }
-    await db.put('settings', out)
-    db.close()
-    return out
+    const r = await api.post<{ item: AppSettings }>('/api/settings', out)
+    return r.item
   }
 }

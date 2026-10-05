@@ -1,14 +1,13 @@
 /**
- * 备份/恢复 (JSON 单文件)
- * - 包含所有 object store 数据
- * - 文件名: func-backup-YYYYMMDD-HHmm.json
- * - 下载使用 Blob + a[download]
+ * 备份/恢复 (JSON 单文件) — 云端版
+ * - 导出: 从服务端 API 读取当前用户全部数据
+ * - 导入: 上传到服务端 /api/import (服务端事务幂等合并)
+ * - 兼容旧 IndexedDB 备份文件格式 (schemaVersion=1 + data.{store}[])
  */
-import type { MetaEntry } from '@/types/settings'
+import { api } from '@/lib/api'
 import { settingsRepo } from '@/repos/settingsRepo'
-import { openDb } from '@/repos/db'
+import type { MetaEntry } from '@/types/settings'
 
-// 备份文件格式版本 (与 DB schema 版本独立; 结构未变则保持 1, 兼容旧备份)
 const SCHEMA_VERSION = 1
 
 const STORE_NAMES = [
@@ -23,25 +22,37 @@ export interface BackupBundle {
   data: Record<string, unknown[]>
 }
 
-/**
- * 导出: 用单个 readonly 事务一次性取所有 store
- */
+const API_RESOURCE: Record<string, string> = {
+  transactions: 'transactions',
+  categories: 'categories',
+  budgets: 'budgets',
+  holdings: 'holdings',
+  holdingTxns: 'holdingTxns',
+  permanentTargets: 'permanentTargets',
+  dcaConfigs: 'dcaConfigs',
+  indexData: 'indexData',
+  dcaExecutions: 'dcaExecutions',
+  dailyDcaConfigs: 'dailyDcaConfigs',
+  settings: 'settings',
+  meta: 'meta'
+}
+
+/** 导出: 逐资源拉取当前用户数据 */
 export async function exportAll(): Promise<BackupBundle> {
-  const db = await openDb()
-  try {
-    const tx = db.transaction(STORE_NAMES, 'readonly')
-    const data: Record<string, unknown[]> = {}
-    for (const name of STORE_NAMES) {
-      data[name] = await tx.objectStore(name).getAll()
+  const data: Record<string, unknown[]> = {}
+  for (const store of STORE_NAMES) {
+    const resource = API_RESOURCE[store]
+    try {
+      const r = await api.get<{ items: unknown[] }>(`/api/${resource}`)
+      data[store] = r.items
+    } catch {
+      data[store] = []
     }
-    await tx.done
-    return {
-      schemaVersion: SCHEMA_VERSION,
-      exportedAt: new Date().toISOString(),
-      data
-    }
-  } finally {
-    db.close()
+  }
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    data
   }
 }
 
@@ -59,7 +70,6 @@ export function downloadBackup(): void {
     a.click()
     document.body.removeChild(a)
     setTimeout(() => URL.revokeObjectURL(url), 1000)
-    // 成功导出后记录最近备份时间 (消除备份提醒)
     settingsRepo.save({ lastBackupAt: Date.now() }).catch(() => { /* 忽略 */ })
   })
 }
@@ -68,25 +78,12 @@ function pad(n: number): string {
   return n < 10 ? '0' + n : '' + n
 }
 
-export async function importAll(bundle: BackupBundle, mode: 'merge' | 'replace' = 'merge'): Promise<void> {
+/** 导入: 上传 bundle 到服务端, 事务内 upsert 幂等合并 (mode 保留兼容旧签名) */
+export async function importAll(bundle: BackupBundle, _mode: 'merge' | 'replace' = 'merge'): Promise<void> {
   if (!bundle || bundle.schemaVersion !== SCHEMA_VERSION) {
     throw new Error(`不兼容的备份版本: ${bundle?.schemaVersion}`)
   }
-  const db = await openDb()
-  try {
-    const tx = db.transaction(STORE_NAMES, 'readwrite')
-    for (const name of STORE_NAMES) {
-      const store = tx.objectStore(name)
-      if (mode === 'replace') await store.clear()
-      const rows = bundle.data[name] || []
-      for (const r of rows) {
-        await store.put(r)
-      }
-    }
-    await tx.done
-  } finally {
-    db.close()
-  }
+  await api.post('/api/import', bundle)
 }
 
 /**
@@ -101,13 +98,8 @@ export function isValidBundle(b: unknown): b is BackupBundle {
   return true
 }
 
-/** 读取所有 meta 条目 */
+/** 读取所有 meta 条目 (远程) */
 export async function getMetaAll(): Promise<MetaEntry[]> {
-  const db = await openDb()
-  try {
-    const list = await db.getAll('meta') as MetaEntry[]
-    return list
-  } finally {
-    db.close()
-  }
+  const r = await api.get<{ items: MetaEntry[] }>('/api/meta')
+  return r.items
 }

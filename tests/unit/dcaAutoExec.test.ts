@@ -100,6 +100,7 @@ describe('DCA store · runAutoExecutions', () => {
       deviationAlertPercent: 5, targetHoldingId: h.id
     })
     const dca = useDcaStore()
+    setDcaTodayForTests('2026-08-13')
     await dca.load()
     const today = '2026-08-13' // week 2
     const r = await dca.runAutoExecutions(today)
@@ -138,6 +139,7 @@ describe('DCA store · runAutoExecutions', () => {
       deviationAlertPercent: 5, targetHoldingId: h.id
     })
     const dca = useDcaStore()
+    setDcaTodayForTests('2026-08-13')
     await dca.load()
     const today = '2026-08-13'
     const r1 = await dca.runAutoExecutions(today)

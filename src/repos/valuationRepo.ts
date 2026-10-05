@@ -1,4 +1,4 @@
-import { openDb } from '@/repos/db'
+import { api } from '@/lib/api'
 import type { ValuationSnapshot } from '@/types/valuation'
 
 export const STORE_VALUATION_SNAPSHOTS = 'valuationSnapshots' as const
@@ -16,27 +16,24 @@ function daysAgoId(days: number): string {
 export const valuationRepo = {
   /** 写入/覆盖当日快照 */
   async put(snapshot: ValuationSnapshot): Promise<ValuationSnapshot> {
-    const db = await openDb()
-    await db.put(STORE_VALUATION_SNAPSHOTS, snapshot)
-    db.close()
-    return snapshot
+    const r = await api.post<{ item: ValuationSnapshot }>('/api/valuationSnapshots', snapshot)
+    return r.item
   },
 
   /** 按日期 id 取快照 */
   async getByDate(id: string): Promise<ValuationSnapshot | undefined> {
-    const db = await openDb()
-    const r = await db.get(STORE_VALUATION_SNAPSHOTS, id) as ValuationSnapshot | undefined
-    db.close()
-    return r
+    try {
+      const r = await api.get<{ item: ValuationSnapshot }>(`/api/valuationSnapshots/${encodeURIComponent(id)}`)
+      return r.item
+    } catch {
+      return undefined
+    }
   },
 
   /** 取最近 limit 条快照 (按 id 字典序倒序, 即日期最新优先) */
   async listRecent(limit = 30): Promise<ValuationSnapshot[]> {
-    const db = await openDb()
-    const all = await db.getAll(STORE_VALUATION_SNAPSHOTS) as ValuationSnapshot[]
-    db.close()
-    all.sort((a, b) => b.id.localeCompare(a.id))
-    return all.slice(0, limit)
+    const r = await api.get<{ items: ValuationSnapshot[] }>('/api/valuationSnapshots')
+    return r.items.sort((a, b) => b.id.localeCompare(a.id)).slice(0, limit)
   },
 
   /** 取最近一次任意时间的快照 (用于拉取失败时的兜底展示) */

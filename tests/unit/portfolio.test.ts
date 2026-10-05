@@ -53,8 +53,11 @@ describe('现价拉取', () => {
     await p.addTxn({ holdingId: bad.id, side: 'buy', date: '2026-08-01', price: 500000, quantity: 10, fee: 0 })
 
     // OK1 拉到 520 元; BAD1 全部抛错
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      if (typeof url === 'string' && url.includes('OK1')) {
+    const realFetch = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (url: any, init?: any) => {
+      const u = String(url)
+      if (u.startsWith('/api/')) return realFetch(url, init)
+      if (u.includes('OK1')) {
         return {
           ok: true, status: 200,
           json: async () => ({ chart: { result: [{ timestamp: [1, 2, 3, 4, 5], indicators: { quote: [{ close: [510, 515, 518, 519, 520] }] } }] } }),

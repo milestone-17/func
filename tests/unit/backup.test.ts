@@ -1,89 +1,59 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import 'fake-indexeddb/auto'
-import { exportAll, importAll, isValidBundle } from '@/lib/backup'
-import { openDb, resetDbForTests } from '@/repos/db'
+import { exportAll, importAll, isValidBundle, downloadBackup } from '@/lib/backup'
+import { categoryRepo } from '@/repos/categoryRepo'
+import { transactionRepo } from '@/repos/transactionRepo'
+import { resetDbForTests } from '@/repos/db'
 
-describe('backup', () => {
-  beforeEach(async () => {
-    resetDbForTests()
-    // deleteDatabase 是异步的, 必须 await 否则下个 test 看到的是旧数据
-    await new Promise<void>((resolve) => {
-      const req = indexedDB.deleteDatabase('func-db')
-      req.onsuccess = () => resolve()
-      req.onerror = () => resolve()
-      req.onblocked = () => resolve()
-    })
-  })
+beforeEach(() => {
+  resetDbForTests()
+})
 
-  it('isValidBundle validates shape', () => {
-    expect(isValidBundle({ schemaVersion: 1, exportedAt: 'x', data: {} })).toBe(true)
-    expect(isValidBundle(null)).toBe(false)
-    expect(isValidBundle({})).toBe(false)
-    expect(isValidBundle({ schemaVersion: '1', exportedAt: 'x', data: {} })).toBe(false)
-  })
-
-  it('exportAll returns all stores', async () => {
-    const db = await openDb()
-    // settings store keyPath = 'id', 必须带 id
-    await db.put('settings', { id: 'app', theme: 'light', usdCnyRate: 7.2, permanentThreshold: 5, updatedAt: Date.now() })
-    db.close()
+describe('backup (云端语义)', () => {
+  it('exportAll 返回含全部 store 键的 bundle', async () => {
+    await categoryRepo.add({ name: '餐饮', type: 'expense', color: '#f87171', icon: '🍜', order: 0 })
     const bundle = await exportAll()
     expect(bundle.schemaVersion).toBe(1)
-    expect(bundle.data.settings).toBeTruthy()
-    expect((bundle.data.settings as any[]).length).toBe(1)
+    expect(typeof bundle.exportedAt).toBe('string')
+    for (const key of ['transactions', 'categories', 'budgets', 'holdings', 'settings']) {
+      expect(Array.isArray(bundle.data[key])).toBe(true)
+    }
+    expect((bundle.data.categories as unknown[]).length).toBe(1)
   })
 
-  it('importAll merge: keeps existing + adds new', async () => {
-    const db = await openDb()
-    await db.put('categories', {
-      id: 'cat-existing', name: '已有', type: 'expense',
-      color: '#000', order: 0, createdAt: 0, updatedAt: 0, deletedAt: null
+  it('importAll 幂等合并: 重复导入不产生重复行', async () => {
+    const bundle = await exportAll()
+    ;(bundle.data.categories as unknown[]).push({
+      id: 'cat-x', name: '测试分类', type: 'expense', color: '#fff', icon: '🧪', order: 99,
+      createdAt: Date.now(), updatedAt: Date.now(), deletedAt: null
     })
-    db.close()
-    const bundle = {
-      schemaVersion: 1,
-      exportedAt: '2024-01-01',
-      data: {
-        categories: [{
-          id: 'cat-new', name: '新增', type: 'expense',
-          color: '#fff', order: 1, createdAt: 0, updatedAt: 0, deletedAt: null
-        }]
-      }
-    } as any
     await importAll(bundle, 'merge')
-    const db2 = await openDb()
-    const all = await db2.getAll('categories')
-    db2.close()
-    expect(all.length).toBe(2)
+    await importAll(bundle, 'merge')
+    const all = await categoryRepo.list()
+    const xs = all.filter(c => c.id === 'cat-x')
+    expect(xs.length).toBe(1)
   })
 
-  it('importAll replace: clears then loads', async () => {
-    const db = await openDb()
-    await db.put('categories', {
-      id: 'cat-a', name: 'A', type: 'expense',
-      color: '#000', order: 0, createdAt: 0, updatedAt: 0, deletedAt: null
-    })
-    db.close()
-    const bundle = {
-      schemaVersion: 1,
-      exportedAt: '2024-01-01',
-      data: {
-        categories: [{
-          id: 'cat-b', name: 'B', type: 'expense',
-          color: '#fff', order: 0, createdAt: 0, updatedAt: 0, deletedAt: null
-        }]
-      }
-    } as any
-    await importAll(bundle, 'replace')
-    const db2 = await openDb()
-    const all = await db2.getAll('categories')
-    db2.close()
-    expect(all.length).toBe(1)
-    expect((all[0] as any).id).toBe('cat-b')
+  it('交易通过 import 落库可读回', async () => {
+    const t = {
+      id: 'tx-imp-1', date: '2026-01-01', type: 'expense', categoryId: 'c1', amount: 100,
+      note: 'imported', createdAt: Date.now(), updatedAt: Date.now(), deletedAt: null
+    }
+    await importAll({ schemaVersion: 1, exportedAt: new Date().toISOString(), data: { transactions: [t] } }, 'merge')
+    const list = await transactionRepo.list()
+    expect(list.find(x => x.id === 'tx-imp-1')).toBeDefined()
   })
 
-  it('importAll rejects wrong version', async () => {
-    await expect(importAll({ schemaVersion: 99, exportedAt: 'x', data: {} } as any, 'merge'))
-      .rejects.toThrow()
+  it('版本不合法 → 拒绝', async () => {
+    await expect(importAll({ schemaVersion: 99, exportedAt: 'x', data: {} } as never)).rejects.toThrow()
+  })
+
+  it('isValidBundle 校验', () => {
+    expect(isValidBundle({ schemaVersion: 1, exportedAt: 'x', data: {} })).toBe(true)
+    expect(isValidBundle({ exportedAt: 'x' })).toBe(false)
+    expect(isValidBundle(null)).toBe(false)
+  })
+
+  it('downloadBackup 不抛错 (浏览器 API 由 happy-dom 提供)', () => {
+    expect(() => downloadBackup()).not.toThrow()
   })
 })

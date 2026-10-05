@@ -4,6 +4,7 @@ import { requestPersist, isPersisted } from '@/lib/persist'
 import { shouldRemindBackup, daysSince } from '@/lib/backupReminder'
 import { downloadBackup } from '@/lib/backup'
 import { settingsRepo } from '@/repos/settingsRepo'
+import { resetDbForTests } from '@/repos/db'
 import { setActivePinia, createPinia } from 'pinia'
 import { useSettingsStore } from '@/stores/settings'
 
@@ -83,6 +84,7 @@ describe('shouldRemindBackup', () => {
 // ---- backup 写回 lastBackupAt ----
 describe('backup 导出写回 lastBackupAt', () => {
   beforeEach(() => {
+    resetDbForTests()
     setActivePinia(createPinia())
     return new Promise<void>((resolve) => {
       const req = indexedDB.deleteDatabase('func-db')

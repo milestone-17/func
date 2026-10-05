@@ -1,30 +1,35 @@
-import { openDb } from '@/repos/db'
-import { newId, touchUpdated } from '@/repos/base'
+import { makeRemoteRepo } from '@/repos/remote-base'
+import { newId } from '@/repos/base'
 import type { BudgetPlan } from '@/types/budget'
+
+const repo = makeRemoteRepo<BudgetPlan>('budgets')
 
 export const budgetRepo = {
   async upsert(plan: Omit<BudgetPlan, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'> & { id?: string }): Promise<BudgetPlan> {
-    const db = await openDb()
-    const existing = plan.id ? await db.get('budgets', plan.id) as BudgetPlan | undefined : undefined
-    const now = Date.now()
-    const out: BudgetPlan = existing
-      ? touchUpdated({ ...existing, ...plan })
-      : { id: plan.id || newId(), ...plan, createdAt: now, updatedAt: now, deletedAt: null }
-    await db.put('budgets', out)
-    db.close()
-    return out
+    if (plan.id) {
+      const existing = await repo.get(plan.id)
+      if (existing) {
+        return repo.put({ ...existing, ...plan } as BudgetPlan)
+      }
+    }
+    const byMonth = await repo.list(plan.month ? { month: plan.month } : {})
+    const hit = byMonth.find(p => p.month === plan.month)
+    if (hit) {
+      return repo.put({ ...hit, ...plan } as BudgetPlan)
+    }
+    const ts = Date.now()
+    const entity = { id: plan.id || newId(), ...plan, createdAt: ts, updatedAt: ts, deletedAt: null } as unknown as BudgetPlan
+    const { api } = await import('@/lib/api')
+    const r = await api.post<{ item: BudgetPlan }>('/api/budgets', entity)
+    return r.item
   },
   async getForMonth(month: string): Promise<BudgetPlan | undefined> {
-    const db = await openDb()
-    const all = await db.getAll('budgets') as BudgetPlan[]
-    db.close()
-    return all.find(p => p.month === month && !p.deletedAt)
+    const all = await repo.list({ month })
+    return all.find(p => p.month === month)
   },
   async list(): Promise<BudgetPlan[]> {
-    const db = await openDb()
-    const all = await db.getAll('budgets') as BudgetPlan[]
-    db.close()
-    return all.filter(p => !p.deletedAt).sort((a, b) => b.month.localeCompare(a.month))
+    const all = await repo.list()
+    return all.sort((a, b) => b.month.localeCompare(a.month))
   },
   /**
    * 把每月剩余资金按分配规则自动拆到 4 周 (默认均分)

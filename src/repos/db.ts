@@ -48,29 +48,30 @@ export function openDb(): Promise<IDBPDatabase<FuncDB>> {
         const dx = db.createObjectStore('dcaExecutions', { keyPath: 'id' })
         dx.createIndex('by-config', 'configId')
         db.createObjectStore('settings', { keyPath: 'id' })
-        db.createObjectStore('meta', { keyPath: 'key' })
+        db.createObjectStore('meta', { keyPath: 'id' })
       }
-      // v2: 仅新增每日定投配置 store; 不重建任何已有 store, 历史数据零丢失.
+      // v2: 每日定投配置
       if (oldVersion < 2) {
-        if (!db.objectStoreNames.contains('dailyDcaConfigs')) {
-          db.createObjectStore('dailyDcaConfigs', { keyPath: 'id' })
-        }
+        db.createObjectStore('dailyDcaConfigs', { keyPath: 'id' })
       }
-      // v3: 新增估值分位快照 store; 一次/天, id = 'YYYY-MM-DD'.
+      // v3: 估值快照
       if (oldVersion < 3) {
-        if (!db.objectStoreNames.contains('valuationSnapshots')) {
-          db.createObjectStore('valuationSnapshots', { keyPath: 'id' })
-        }
+        db.createObjectStore('valuationSnapshots', { keyPath: 'id' })
       }
     }
   })
 }
 
 export function resetDbForTests(): void {
-  // 保留 API 兼容; 当前无缓存
+  // 云端版: 数据在服务端; 测试中同步清空内存 API 的表 (见 tests/mem-api.ts)
+  const g = globalThis as any
+  const db = g.__funcMemDb
+  if (db) {
+    db.tables = new Map()
+  }
 }
 
-/** 删除整个数据库 (忘记密码时的紧急重置) */
+/** 删除整个数据库 (本地遗留数据清理用; 云端版已不再使用 IndexedDB 存储业务数据) */
 export function wipeAllData(): Promise<void> {
   return new Promise((resolve) => {
     const req = indexedDB.deleteDatabase(DB_NAME)

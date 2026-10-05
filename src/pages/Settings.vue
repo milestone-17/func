@@ -3,6 +3,18 @@
     <div class="space-y-4">
       <h2 class="text-lg font-bold tracking-tight">设置</h2>
 
+      <!-- 账号 -->
+      <section class="card card-pad space-y-3">
+        <span class="section-title">账号</span>
+        <div class="flex items-center justify-between rounded-xl bg-surface2 px-3 py-2 text-xs">
+          <span class="text-ink2">当前用户</span>
+          <span class="text-ink font-medium">{{ auth.user?.email || '未登录' }}</span>
+        </div>
+        <button @click="onLogout" class="w-full rounded-xl bg-rose-50 py-2.5 text-sm font-medium text-neg transition hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20">
+          退出登录
+        </button>
+      </section>
+
       <!-- 外观 -->
       <section class="card card-pad space-y-3">
         <span class="section-title">外观</span>
@@ -17,9 +29,6 @@
           </div>
         </div>
       </section>
-
-      <!-- 应用锁 -->
-      <AppLockSettings />
 
       <!-- 财务参数 -->
       <section class="card card-pad space-y-3">
@@ -44,10 +53,9 @@
       <!-- 数据 -->
       <section class="card card-pad space-y-2">
         <span class="section-title mb-1">数据管理</span>
-        <!-- 持久化状态 -->
         <div class="flex items-center justify-between rounded-xl bg-surface2 px-3 py-2 text-xs">
-          <span class="text-ink2">持久化存储</span>
-          <Badge :tone="persistTone">{{ persistLabel }}</Badge>
+          <span class="text-ink2">数据存储</span>
+          <Badge tone="green">云端 PostgreSQL</Badge>
         </div>
         <div class="flex items-center justify-between rounded-xl bg-surface2 px-3 py-2 text-xs">
           <span class="text-ink2">最近备份</span>
@@ -74,26 +82,29 @@
       <!-- 关于 -->
       <section class="card card-pad space-y-1.5">
         <span class="section-title mb-1">关于</span>
-        <p class="text-xs text-ink3">本地优先 · 不上云 · IndexedDB 存储</p>
-        <p class="text-xs text-ink3">所有数据仅保存在你的浏览器中,清除浏览器数据将丢失</p>
-        <p class="text-xs text-ink3">建议定期导出备份</p>
+        <p class="text-xs text-ink3">多端同步 · 云端存储 · 数据按账号隔离</p>
+        <p class="text-xs text-ink3">服务器每日自动备份, 保留 7 天</p>
+        <p class="text-xs text-ink3">仍可导出 JSON 备份文件到本地</p>
       </section>
 
-      <p class="text-center text-[11px] text-ink3 pt-2">本地财务 v1.0</p>
+      <p class="text-center text-[11px] text-ink3 pt-2">本地财务 v2.0 · 云端版</p>
     </div>
   </AppShell>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import AppShell from '@/components/AppShell.vue'
-import AppLockSettings from '@/components/AppLockSettings.vue'
 import Badge from '@/components/Badge.vue'
 import { useSettingsStore } from '@/stores/settings'
+import { useAuthStore } from '@/stores/auth'
 import { downloadBackup, importAll, isValidBundle } from '@/lib/backup'
 import type { Theme } from '@/types/settings'
 
 const settings = useSettingsStore()
+const auth = useAuthStore()
+const router = useRouter()
 const importMsg = ref('')
 const importOk = ref(false)
 
@@ -130,19 +141,11 @@ async function onReminderDays(e: Event) {
   await settings.save({ backupReminderDays: v })
 }
 
-// 持久化状态
-const persistLabel = computed(() => {
-  const p = settings.settings?.storagePersisted
-  if (p === true) return '已开启'
-  if (p === false) return '未开启'
-  return '不支持'
-})
-const persistTone = computed<'green' | 'amber' | 'gray'>(() => {
-  const p = settings.settings?.storagePersisted
-  if (p === true) return 'green'
-  if (p === false) return 'amber'
-  return 'gray'
-})
+async function onLogout() {
+  await auth.logout()
+  router.push({ name: 'login' })
+}
+
 const lastBackupLabel = computed(() => {
   const t = settings.settings?.lastBackupAt
   if (!t) return '从未备份'
