@@ -7,8 +7,7 @@
  * 数据源 (2026-08-26 实测): push2his klt=103 月 K 支持 cb= JSONP 回调,
  * 返回 data.klines = ["YYYY-MM-DD,开,收,高,低", ...], 上证指数全量 ~432 根.
  */
-import { jsonpGet } from '@/lib/fundQuote'
-import { PROXIES, fetchWithTimeout } from '@/lib/yahoo'
+import { api } from '@/lib/api'
 
 export interface MonthlyBar { date: string; open: number; close: number; high: number; low: number }
 export interface ChannelLine { slope: number; intercept: number; fromT: number; toT: number }
@@ -197,35 +196,17 @@ export function zoneOf(close: number, channel: Channel, tNow: number): ZoneInfo 
 
 // ---------------------------------------------------------------- 拉取
 
-const KLINE_API = (secid: string) =>
-  `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${encodeURIComponent(secid)}&klt=103&fqt=1&beg=0&end=20500101&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55`
-
 /**
  * 拉取指数全量月 K: JSONP 优先 (实测可用), 失败回落 CORS 代理链 fetch。
  * 全部失败返回 null, 不抛。
  */
 export async function fetchMonthlyBars(secid: string, timeout = 12000): Promise<MonthlyBar[] | null> {
-  // 1) JSONP (契约: 失败 resolve null; 此处再兜一层异常, 保证整体不抛)
-  let data: unknown = null
+  void timeout
+  // 云端版: 经服务端代理 /api/market/monthly (12h 缓存), 浏览器不再直连东财
   try {
-    data = await jsonpGet(cb => `${KLINE_API(secid)}&lmt=10000&cb=${cb}`, timeout)
+    const r = await api.get<{ bars: MonthlyBar[] }>(`/api/market/monthly?secid=${encodeURIComponent(secid)}`)
+    return r.bars.length > 0 ? r.bars : null
   } catch {
-    data = null
+    return null
   }
-  const bars = parsePush2hisKline(data)
-  if (bars.length > 0) return bars
-  // 2) 代理链兜底 (JSONP 被拦截 / 非 document 环境)
-  const url = KLINE_API(secid)
-  for (const u of [url, ...PROXIES.map(p => p(url))]) {
-    try {
-      const res = await fetchWithTimeout(u, timeout)
-      if (!res.ok) continue
-      const json = await res.json()
-      const viaProxy = parsePush2hisKline(json)
-      if (viaProxy.length > 0) return viaProxy
-    } catch {
-      // 试下一个
-    }
-  }
-  return null
 }

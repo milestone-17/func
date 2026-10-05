@@ -1,30 +1,43 @@
+/**
+ * 行情抓取器 (东方财富公开接口, 国内服务器直连稳定)
+ *
+ * 指数日线: push2his klt=101 日K
+ *   - ^NDX  → secid 105.NDX (纳斯达克100)
+ *   - ^GSPC → secid 100.GSPC (标普500)
+ * 输出结构与旧 Yahoo 版一致: [{ symbol, date, data: {symbol,name,date,close} }]
+ */
+
 const INDICES = [
-  { yahoo: '%5ENDX', symbol: '^NDX', name: '纳斯达克100指数' },
-  { yahoo: '%5EGSPC', symbol: '^GSPC', name: '标普500指数' }
+  { secid: '100.NDX', symbol: '^NDX', name: '纳斯达克100指数' },
+  { secid: '100.SPX', symbol: '^GSPC', name: '标普500指数' }
 ]
+
+const UT = 'fa5fd1943c7b386f172d6893dbfba10b'
 
 interface Bar { date: string; close: number }
 
-function tsToDate(ts: number): string {
-  const d = new Date(ts * 1000)
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+/** 解析 push2his klines ["2026-01-05,开,收,高,低,..."] → bars (升序) */
+export function parseEmKlines(klines: unknown): Bar[] {
+  if (!Array.isArray(klines)) return []
+  const bars: Bar[] = []
+  for (const k of klines) {
+    if (typeof k !== 'string') continue
+    const parts = k.split(',')
+    const date = (parts[0] || '').trim()
+    const close = Number(parts[2])
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(close) || close <= 0) continue
+    bars.push({ date, close: Math.round(close * 100) / 100 })
+  }
+  return bars
 }
 
-async function fetchIndex(idx: { yahoo: string; symbol: string; name: string }): Promise<Array<{ symbol: string; date: string; data: object }>> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${idx.yahoo}?range=2y&interval=1d`
+async function fetchIndex(idx: { secid: string; symbol: string; name: string }): Promise<Array<{ symbol: string; date: string; data: object }>> {
+  // lmt=600 ≈ 2.4 年交易日, 覆盖 2y 需求
+  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${encodeURIComponent(idx.secid)}&klt=101&fqt=1&lmt=600&end=20500101&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55&ut=${UT}`
   const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (func-server)' } })
-  if (!res.ok) throw new Error(`Yahoo HTTP ${res.status} for ${idx.symbol}`)
-  const json = await res.json()
-  const result = json?.chart?.result?.[0]
-  if (!result || !result.timestamp) throw new Error(`Yahoo 返回数据结构异常: ${idx.symbol}`)
-  const ts: number[] = result.timestamp
-  const closes: Array<number | null> = result.indicators?.quote?.[0]?.close || []
-  const bars: Bar[] = []
-  for (let i = 0; i < ts.length; i++) {
-    const c = closes[i]
-    if (c == null || Number.isNaN(c)) continue
-    bars.push({ date: tsToDate(ts[i]), close: Math.round(c * 100) / 100 })
-  }
+  if (!res.ok) throw new Error(`东财 HTTP ${res.status} for ${idx.symbol}`)
+  const json = (await res.json()) as { data?: { klines?: unknown } }
+  const bars = parseEmKlines(json?.data?.klines)
   if (bars.length < 250) throw new Error(`${idx.symbol} 数据不足: 仅 ${bars.length} 条`)
   return bars.map(b => ({
     symbol: idx.symbol,

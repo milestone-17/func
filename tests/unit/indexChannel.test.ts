@@ -1,19 +1,10 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 
-// 网络层 mock: 只验证路由/兜底逻辑
-vi.mock('@/lib/fundQuote', () => ({ jsonpGet: vi.fn(async () => null) }))
-vi.mock('@/lib/yahoo', () => ({
-  PROXIES: [(u: string) => `https://proxy.example/?url=${encodeURIComponent(u)}`],
-  fetchWithTimeout: vi.fn(async () => ({ ok: false }) as unknown as Response),
-}))
-
 import {
   parsePush2hisKline, findPivots, theilSenSlope, fitChannel, zoneOf, fetchMonthlyBars,
   PRESET_INDICES, PIVOT_WINDOW_K, type MonthlyBar, type Channel
 } from '@/lib/indexChannel'
-import { jsonpGet } from '@/lib/fundQuote'
-import { fetchWithTimeout } from '@/lib/yahoo'
 
 // ---------------------------------------------------------------- 合成数据
 
@@ -175,39 +166,37 @@ describe('zoneOf (四区 + 百分位)', () => {
   })
 })
 
-describe('fetchMonthlyBars (JSONP 优先, 代理链兜底)', () => {
+describe('fetchMonthlyBars (云端: 服务端代理)', () => {
   afterEach(() => {
-    vi.mocked(jsonpGet).mockResolvedValue(null)
-    vi.mocked(fetchWithTimeout).mockResolvedValue({ ok: false } as unknown as Response)
-    vi.clearAllMocks()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
-  const klinePayload = { data: { klines: ['1990-12-31,96.05,127.61,127.61,95.79'] } }
-
-  it('JSONP 成功 → 直接返回, 不走代理', async () => {
-    vi.mocked(jsonpGet).mockResolvedValue(klinePayload)
+  it('代理成功 → 返回 bars', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) => {
+      const u = String(url)
+      if (u.includes('/api/market/monthly')) {
+        return { ok: true, status: 200, json: async () => ({ bars: [{ date: '2026-01-31', open: 3000, close: 3100, high: 3200, low: 2950 }] }) } as unknown as Response
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response
+    }))
     const bars = await fetchMonthlyBars('1.000001')
     expect(bars).toHaveLength(1)
-    expect(bars![0].low).toBe(95.79)
-    expect(fetchWithTimeout).not.toHaveBeenCalled()
+    expect(bars![0].close).toBe(3100)
   })
 
-  it('JSONP 失败 → 直连/代理链 fetch 兜底', async () => {
-    vi.mocked(jsonpGet).mockResolvedValue(null)
-    vi.mocked(fetchWithTimeout).mockResolvedValue({
-      ok: true, json: async () => klinePayload
-    } as unknown as Response)
+  it('代理失败 → null 不抛', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('net') }))
     const bars = await fetchMonthlyBars('1.000001')
-    expect(bars).toHaveLength(1)
-    expect(fetchWithTimeout).toHaveBeenCalled()
+    expect(bars).toBeNull()
   })
 
-  it('全失败 (JSONP resolve null + 代理全挂) → null 不抛; JSONP 异常拒绝也不抛', async () => {
-    vi.mocked(jsonpGet).mockResolvedValue(null)
-    vi.mocked(fetchWithTimeout).mockRejectedValue(new Error('net'))
-    expect(await fetchMonthlyBars('1.000001')).toBeNull()
-    vi.mocked(jsonpGet).mockRejectedValue(new Error('jsonp crash')) // 防御: 真实 jsonpGet 不 reject
-    expect(await fetchMonthlyBars('1.000001')).toBeNull()
+  it('代理返回空 bars → null', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      ({ ok: true, status: 200, json: async () => ({ bars: [] }) }) as unknown as Response
+    ))
+    const bars = await fetchMonthlyBars('1.000001')
+    expect(bars).toBeNull()
   })
 })
 

@@ -1,22 +1,10 @@
 /**
- * 中国场外基金净值/估值拉取 (东财移动端批量接口, JSONP 绕 CORS)
+ * 中国场外基金净值拉取 (云端版)
  *
- * 数据源: fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo
- *   - 支持 JSONP `callback` 参数, 回调名可自定义 → 无固定名串值问题
- *   - 一次请求返回全部 6 位基金代码的 Datas[]:
- *       FCODE      基金代码
- *       SHORTNAME  基金名称
- *       PDATE      净值日期
- *       NAV        最近交易日真实单位净值 (元)
- *       GSZ        盘中估值 (元), 交易时段外为 null
- *   - 取值优先级: NAV (真实净值) > GSZ (估值, 标 isEstimate)
- *
- * 兜底源: fund.eastmoney.com/pingzhongdata/{code}.js (脚本标签)
- *   设置全局 var Data_netWorthTrend = [{ x, y, ... }], 末元素 y 为最近净值 (元)。
- *   仅当批量接口失败时逐只使用 (该文件较大, ~281KB)。
- *
- * JSONP/脚本加载不受浏览器 CORS 限制, 线上 (GitHub Pages https) 可用。
- * 失败/超时 → 返回空 Map / null, 绝不写 0 或错误数值。
+ * 全部经服务端代理 /api/market/fund-quotes (东财 FundMNFInfo, 服务端 60s 缓存):
+ * - 浏览器不再 JSONP 直连 fundmobapi / pingzhongdata
+ * - 解析函数 (parseFundMNFInfo 等) 保留导出, 服务端结构与前端类型一致, 单测继续覆盖
+ * - fetchFundNavTrend 历史走势: 服务端暂无对应代理, 返回空数组 (详情页走势图降级)
  */
 
 export interface FundNav {
@@ -24,17 +12,15 @@ export interface FundNav {
   name: string
   nav: number          // 元
   isEstimate: boolean  // 是否为估值 (用了 GSZ)
-  navDate: string      // 净值日期 PDATE (pingzhongdata 兜底时为空)
+  navDate: string      // 净值日期 PDATE
   source: 'fundMNFInfo' | 'pingzhongdata'
 }
 
-const MOBILE_API = 'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo'
-const PINGZHONG_API = (code: string) =>
-  `https://fund.eastmoney.com/pingzhongdata/${encodeURIComponent(code)}.js`
+import { api } from '@/lib/api'
 
 let seq = 0
 
-/** 解析 FundMNFInfo 响应 → Map<code, FundNav> (纯函数, 便于测试) */
+/** 解析 FundMNFInfo 响应 → Map<code, FundNav> (纯函数, 便于测试; 服务端代理同结构) */
 export function parseFundMNFInfo(payload: unknown): Map<string, FundNav> {
   const map = new Map<string, FundNav>()
   if (!payload || typeof payload !== 'object') return map
@@ -58,7 +44,7 @@ export function parseFundMNFInfo(payload: unknown): Map<string, FundNav> {
   return map
 }
 
-/** 解析 pingzhongdata 的 Data_netWorthTrend → 最近净值 (元); 无有效值返回 null */
+/** 解析 pingzhongdata 的 Data_netWorthTrend → 最近净值 (元); 保留导出兼容旧测试 */
 export function parsePingzhongDataTrend(value: unknown): number | null {
   if (!Array.isArray(value) || value.length === 0) return null
   for (let i = value.length - 1; i >= 0; i--) {
@@ -68,7 +54,7 @@ export function parsePingzhongDataTrend(value: unknown): number | null {
   return null
 }
 
-/** JSONP: 注入 script, 用唯一回调名拉取; 失败/超时 → null, 不抛 (导出供 indexChannel 复用) */
+/** JSONP 工具保留导出 (兼容旧测试/潜在调用方); 云端版主链路不再使用 */
 export function jsonpGet(buildUrl: (cb: string) => string, timeout: number): Promise<unknown> {
   return new Promise((resolve) => {
     if (typeof document === 'undefined' || typeof window === 'undefined') {
@@ -95,60 +81,32 @@ export function jsonpGet(buildUrl: (cb: string) => string, timeout: number): Pro
   })
 }
 
-/** 加载普通脚本 (不调用回调), 完成或失败返回布尔 */
-function loadPlainScript(src: string, timeout: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (typeof document === 'undefined' || typeof window === 'undefined') {
-      resolve(false)
-      return
-    }
-    const script = document.createElement('script')
-    let done = false
-    const finish = (ok: boolean) => {
-      if (done) return
-      done = true
-      clearTimeout(timer)
-      script.remove()
-      resolve(ok)
-    }
-    const timer = setTimeout(() => finish(false), timeout)
-    script.onload = () => finish(true)
-    script.onerror = () => finish(false)
-    script.src = src
-    document.body.appendChild(script)
-  })
-}
-
-/** 批量拉取全部 6 位基金代码净值; 失败返回空 Map, 不抛 */
+/** 批量拉取基金净值 (服务端代理); 失败返回空 Map, 不抛 */
 export async function fetchFundNavs(codes: string[], timeout = 10000): Promise<Map<string, FundNav>> {
+  void timeout
   const list = codes.filter(c => /^\d{6}$/.test(c))
   if (list.length === 0) return new Map()
-  const data = await jsonpGet((cb) => {
-    const p = new URLSearchParams({
-      pageIndex: '1',
-      pageSize: String(Math.max(100, list.length)),
-      plat: 'Android',
-      appType: 'ttjj',
-      product: 'EFund',
-      Version: '1',
-      deviceid: 'wxf',
-    })
-    // Fcodes 逗号拼接 (不编码逗号, 服务端按逗号拆)
-    return `${MOBILE_API}?${p.toString()}&Fcodes=${list.join(',')}&callback=${cb}`
-  }, timeout)
-  return parseFundMNFInfo(data)
+  try {
+    const r = await api.get<{ items: Array<{ code: string; name: string; nav: number; isEstimate: boolean; navDate: string; source: string }> }>(
+      `/api/market/fund-quotes?codes=${list.join(',')}`
+    )
+    const map = new Map<string, FundNav>()
+    for (const row of r.items) {
+      map.set(row.code, { code: row.code, name: row.name, nav: row.nav, isEstimate: row.isEstimate, navDate: row.navDate, source: 'fundMNFInfo' })
+    }
+    return map
+  } catch {
+    return new Map()
+  }
 }
 
-/** 兜底: pingzhongdata 逐只拉净值; 失败/超时 → null */
+/** 兜底: 单只净值 (云端版统一走服务端代理, 保留旧签名) */
 export async function fetchFundNavByPingzhongdata(code: string, timeout = 10000): Promise<FundNav | null> {
-  const ok = await loadPlainScript(PINGZHONG_API(code), timeout)
-  if (!ok) return null
-  const nav = parsePingzhongDataTrend((window as { Data_netWorthTrend?: unknown }).Data_netWorthTrend)
-  if (nav == null) return null
-  return { code, name: '', nav, isEstimate: false, navDate: '', source: 'pingzhongdata' }
+  void timeout
+  return fetchFundQuote(code)
 }
 
-/** 单只基金净值拉取 (供单只手动刷新); 回调名唯一, 与批量并发不冲突 */
+/** 单只基金净值拉取; 失败返回 null */
 export async function fetchFundQuote(code: string, timeout = 8000): Promise<FundNav | null> {
   const map = await fetchFundNavs([code], timeout)
   return map.get(code) ?? null
@@ -156,7 +114,7 @@ export async function fetchFundQuote(code: string, timeout = 8000): Promise<Fund
 
 export interface NavTrendPoint { date: string; nav: number }
 
-/** 解析 pingzhongdata 的 Data_netWorthTrend 完整历史 → [{date, nav}] */
+/** 解析 pingzhongdata 完整历史 → [{date, nav}]; 保留导出兼容旧测试 */
 export function parsePingzhongDataFullTrend(value: unknown): NavTrendPoint[] {
   if (!Array.isArray(value) || value.length === 0) return []
   const out: NavTrendPoint[] = []
@@ -176,11 +134,9 @@ export function parsePingzhongDataFullTrend(value: unknown): NavTrendPoint[] {
   return out
 }
 
-/** 拉取基金近 N 天净值历史 (用于详情页走势图); 失败返回空数组 */
+/** 拉取基金近 N 天净值历史 (云端版暂无服务端代理, 返回空数组降级) */
 export async function fetchFundNavTrend(code: string, timeout = 12000): Promise<NavTrendPoint[]> {
-  if (!/^\d{6}$/.test(code)) return []
-  const ok = await loadPlainScript(PINGZHONG_API(code), timeout)
-  if (!ok) return []
-  const w = window as unknown as { Data_netWorthTrend?: unknown }
-  return parsePingzhongDataFullTrend(w.Data_netWorthTrend)
+  void code
+  void timeout
+  return []
 }

@@ -66,4 +66,4 @@ export interface ItemResp<T> { item: T }
 export interface ImportSummary { [store: string]: number }
 export interface ImportResp { ok: boolean; summary: ImportSummary }
 
-export interface CurrentUser { id: string; email: string; provider: string }
+export interface CurrentUser { id: string; email: string; provider: string; role?: string }

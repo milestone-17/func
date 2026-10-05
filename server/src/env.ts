@@ -9,6 +9,7 @@ export interface Env {
   smtpFrom?: string
   githubClientId?: string
   githubClientSecret?: string
+  adminEmail?: string
   appUrl: string
   isProd: boolean
 }
@@ -30,6 +31,7 @@ export function loadEnv(): Env {
     smtpFrom: process.env.SMTP_FROM || process.env.SMTP_USER,
     githubClientId: process.env.GITHUB_CLIENT_ID,
     githubClientSecret: process.env.GITHUB_CLIENT_SECRET,
+    adminEmail: process.env.ADMIN_EMAIL,
     appUrl: process.env.APP_URL || `http://localhost:${port}`,
     isProd: process.env.NODE_ENV === 'production'
   }

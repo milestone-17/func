@@ -7,7 +7,7 @@ function normSymbol(s: string): string {
 
 async function listAll(): Promise<DCAConfig[]> {
   const r = await api.get<{ items: DCAConfig[] }>('/api/dcaConfigs')
-  return r.items.filter(c => !c.deletedAt)
+  return (r.items || []).filter(c => !c.deletedAt)
 }
 
 export const dcaConfigRepo = {

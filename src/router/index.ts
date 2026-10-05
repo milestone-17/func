@@ -12,7 +12,8 @@ const routes: RouteRecordRaw[] = [
   { path: '/dca', name: 'dca', component: () => import('@/pages/Dca.vue') },
   { path: '/suggest', name: 'suggest', component: () => import('@/pages/Suggest.vue') },
   { path: '/channel', name: 'channel', component: () => import('@/pages/Channel.vue') },
-  { path: '/settings', name: 'settings', component: () => import('@/pages/Settings.vue') }
+  { path: '/settings', name: 'settings', component: () => import('@/pages/Settings.vue') },
+  { path: '/admin', name: 'admin', component: () => import('@/pages/Admin.vue'), meta: { admin: true } }
 ]
 
 export const router = createRouter({
@@ -29,6 +30,9 @@ router.beforeEach(async (to) => {
   }
   if (!auth.isLoggedIn) {
     return { name: 'login', query: to.fullPath === '/' ? {} : { redirect: to.fullPath } }
+  }
+  if (to.meta.admin && auth.user?.role !== 'admin') {
+    return { path: '/' }
   }
   return true
 })

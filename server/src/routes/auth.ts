@@ -19,6 +19,11 @@ function setTokenCookie(app: FastifyInstance, reply: FastifyReply, userId: strin
   })
 }
 
+/** ADMIN_EMAIL 匹配 → 注册即管理员 */
+function resolveRole(env: Env, email: string): string {
+  return env.adminEmail && email.toLowerCase() === env.adminEmail.toLowerCase() ? 'admin' : 'user'
+}
+
 export async function authRoutes(app: FastifyInstance, env: Env): Promise<void> {
   // 发送邮箱验证码
   app.post('/api/auth/send-code', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (req, reply) => {
@@ -59,10 +64,10 @@ export async function authRoutes(app: FastifyInstance, env: Env): Promise<void> 
     if (existing) return reply.code(409).send({ error: '该邮箱已注册' })
     const passwordHash = await argonHash(password)
     const user = await prisma.user.create({
-      data: { email: norm, passwordHash, provider: 'email', emailVerified: true }
+      data: { email: norm, passwordHash, provider: 'email', emailVerified: true, role: resolveRole(env, norm) }
     })
     setTokenCookie(app, reply, user.id)
-    return { user: { id: user.id, email: user.email } }
+    return { user: { id: user.id, email: user.email, role: user.role } }
   })
 
   // 登录
@@ -71,22 +76,17 @@ export async function authRoutes(app: FastifyInstance, env: Env): Promise<void> 
     if (!email || !password) return reply.code(400).send({ error: '请输入邮箱和密码' })
     const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } })
     if (!user || !user.passwordHash) return reply.code(401).send({ error: '邮箱或密码错误' })
+    if (user.disabled) return reply.code(401).send({ error: '账号已被禁用' })
     const ok = await argonVerify(user.passwordHash, password)
     if (!ok) return reply.code(401).send({ error: '邮箱或密码错误' })
     setTokenCookie(app, reply, user.id)
-    return { user: { id: user.id, email: user.email } }
+    return { user: { id: user.id, email: user.email, role: user.role } }
   })
 
   // 登出
   app.post('/api/auth/logout', async (_req, reply) => {
     reply.clearCookie(COOKIE, { path: '/' })
     return { ok: true }
-  })
-
-  // 当前用户
-  app.get('/api/me', { preHandler: requireAuth }, async (req) => {
-    const user = await prisma.user.findUnique({ where: { id: req.userId! } })
-    return { user: user ? { id: user.id, email: user.email, provider: user.provider } : null }
   })
 
   // 重置密码
@@ -102,6 +102,12 @@ export async function authRoutes(app: FastifyInstance, env: Env): Promise<void> 
     const passwordHash = await argonHash(newPassword)
     await prisma.user.update({ where: { id: user.id }, data: { passwordHash } })
     return { ok: true }
+  })
+
+  // 当前用户
+  app.get('/api/me', { preHandler: requireAuth }, async (req) => {
+    const user = await prisma.user.findUnique({ where: { id: req.userId! } })
+    return { user: user ? { id: user.id, email: user.email, provider: user.provider, role: user.role } : null }
   })
 
   // 访客体验: 一键创建临时账号并登录 (限速防灌库)
@@ -153,9 +159,10 @@ export async function authRoutes(app: FastifyInstance, env: Env): Promise<void> 
       if (user) {
         user = await prisma.user.update({ where: { id: user.id }, data: { githubId, emailVerified: true } })
       } else {
-        user = await prisma.user.create({ data: { email: norm, provider: 'github', githubId, emailVerified: true } })
+        user = await prisma.user.create({ data: { email: norm, provider: 'github', githubId, emailVerified: true, role: resolveRole(env, norm) } })
       }
     }
+    if (user.disabled) return reply.code(401).send({ error: '账号已被禁用' })
     setTokenCookie(app, reply, user.id)
     return reply.redirect(`${env.appUrl}/`)
   })

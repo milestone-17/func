@@ -93,7 +93,7 @@ export const useDcaStore = defineStore('dca', () => {
     // 首次进入: 用打包进站点的预置行情初始化 (同源, 必成功)
     if (s.length < 250) {
       const bundled = await loadBundledQuotes(symbol)
-      if (bundled && bundled.bars.length >= 250) {
+      if (bundled && Array.isArray(bundled.bars) && bundled.bars.length >= 250) {
         for (const r of barsToIndexData(bundled.bars, 'cache', symbol)) await indexDataRepo.put(r)
         s = await indexDataRepo.listBySymbol(symbol)
         st.lastSyncAt = new Date(bundled.fetchedAt).toISOString()
@@ -127,7 +127,7 @@ export const useDcaStore = defineStore('dca', () => {
     // 2. 失败回落打包预置行情 (同源, 必成功)
     if (!bars || bars.length < 250) {
       const bundled = await loadBundledQuotes(symbol)
-      if (bundled && bundled.bars.length >= 250) {
+      if (bundled && Array.isArray(bundled.bars) && bundled.bars.length >= 250) {
         bars = bundled.bars
         source = 'cache'
       }

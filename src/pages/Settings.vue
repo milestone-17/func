@@ -79,6 +79,16 @@
         <div v-if="importMsg" class="rounded-lg px-3 py-2 text-sm" :class="importOk ? 'bg-emerald-50 text-pos dark:bg-emerald-500/10' : 'bg-rose-50 text-neg dark:bg-rose-500/10'">{{ importMsg }}</div>
       </section>
 
+      <!-- 后台管理 (仅管理员) -->
+      <button
+        v-if="auth.user?.role === 'admin'"
+        @click="router.push('/admin')"
+        class="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition hover:bg-surface2"
+      >
+        <span class="flex items-center gap-2 text-ink">后台管理</span>
+        <svg class="h-4 w-4 text-ink3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+
       <!-- 关于 -->
       <section class="card card-pad space-y-1.5">
         <span class="section-title mb-1">关于</span>

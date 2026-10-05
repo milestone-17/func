@@ -40,7 +40,7 @@ export function installMemApi(): void {
   const g = globalThis as any
   if (!g.__funcRealFetch) g.__funcRealFetch = realFetch
 
-  g.fetch = async function mockedFetch(input: any, init?: any): Promise<Response> {
+  const mockedFetch = async function (input: any, init?: any): Promise<Response> {
     const rawUrl = typeof input === 'string' ? input : input?.url || ''
     const method = (init?.method || 'GET').toUpperCase()
     if (!rawUrl.startsWith('/api/')) {
@@ -122,6 +122,10 @@ export function installMemApi(): void {
 
     return json({ error: `mock 未实现: ${method} ${url}` }, 404)
   }
+
+  // 安装 mock + 暴露句柄 (测试内 stubGlobal 覆盖后, 转发 /api/* 用 __funcApiFetch)
+  g.fetch = mockedFetch
+  g.__funcApiFetch = mockedFetch
 }
 
 function upsert(store: string, row: Row): void {

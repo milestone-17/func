@@ -121,15 +121,19 @@ describe('DCA store (多标的)', () => {
     const timestamps: number[] = []
     const base = Math.floor(Date.UTC(2025, 7, 1) / 1000) // 秒
     for (let i = 0; i < n; i++) timestamps.push(base + i * 86400)
-    const yahooJson = JSON.stringify({
-      chart: { result: [{ timestamp: timestamps, indicators: { quote: [{ close: closes }] } }] }
-    })
-    vi.stubGlobal('fetch', vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      text: async () => yahooJson,
-      json: async () => JSON.parse(yahooJson)
-    } as Response)))
+    const bars = closes.map((c, i) => ({
+      date: new Date((base + i * 86400) * 1000).toISOString().slice(0, 10),
+      close: c
+    }))
+    const apiFetch = (globalThis as any).__funcApiFetch
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request, init?: any) => {
+      const u = String(url)
+      if (u.includes('/api/market/yahoo-daily')) {
+        return { ok: true, status: 200, json: async () => ({ bars }) } as unknown as Response
+      }
+      if (u.startsWith('/api/')) return apiFetch(url, init)
+      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response
+    }))
     return closes
   }
 
