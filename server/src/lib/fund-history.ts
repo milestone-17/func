@@ -31,10 +31,11 @@ export function parseLsjzList(payload: unknown): FundHistoryBar[] {
   return out
 }
 
-/** 拉取基金全部历史净值 (翻页至 800 页上限, 每页 49; MA250 需 ≥2 年 ≈ 500 交易日) */
+/** 拉取基金全部历史净值 (翻页至上限; 东财实际每页仅回 ~20 条与 pageSize 无关, 以空页为终止) */
 export async function fetchFundHistoryFromEm(code: string): Promise<FundHistoryBar[]> {
   const all: FundHistoryBar[] = []
-  for (let page = 1; page <= 12; page++) {
+  const seen = new Set<string>()
+  for (let page = 1; page <= 60; page++) {
     const url = `https://api.fund.eastmoney.com/f10/lsjz?fundCode=${code}&pageIndex=${page}&pageSize=49`
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 15000)
@@ -44,8 +45,16 @@ export async function fetchFundHistoryFromEm(code: string): Promise<FundHistoryB
       const json = await res.json()
       const list = parseLsjzList(json)
       if (list.length === 0) break
-      all.push(...list)
-      if (list.length < 49) break
+      let fresh = 0
+      for (const b of list) {
+        if (!seen.has(b.date)) {
+          seen.add(b.date)
+          all.push(b)
+          fresh++
+        }
+      }
+      // 整页都是重复数据 → 已到最早记录
+      if (fresh === 0) break
     } finally {
       clearTimeout(timer)
     }

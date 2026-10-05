@@ -14,7 +14,7 @@
       </section>
 
       <!-- 四类资产 -->
-      <section class="space-y-2.5">
+      <section class="grid gap-2.5 md:grid-cols-2">
         <div v-for="d in perm.analysis.deviations" :key="d.assetType" class="card card-pad fade-in">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">

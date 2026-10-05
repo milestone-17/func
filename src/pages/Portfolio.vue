@@ -64,7 +64,8 @@
       </div>
 
       <!-- 持仓卡片 -->
-      <div v-for="h in filteredHoldings" :key="h.id" class="card card-pad space-y-3 fade-in">
+      <div class="grid gap-4 md:grid-cols-2">
+        <div v-for="h in filteredHoldings" :key="h.id" class="card card-pad space-y-3 fade-in">
         <div class="flex items-start justify-between">
           <button @click="goDetail(h.id)" class="min-w-0 text-left flex-1 active:opacity-70">
             <div class="flex items-center gap-2">
@@ -132,6 +133,7 @@
           <button @click="openConvert(h)" class="btn-ghost !py-2 !text-xs">⇄ 转换</button>
         </div>
         <div v-if="h.isClosed" class="text-center text-[11px] text-ink3">已清仓</div>
+        </div>
       </div>
 
       <ConfirmDialog v-model="confirming" title="删除持仓" message="将删除该持仓及其交易记录,此操作不可撤销。" @confirm="doDelete" />

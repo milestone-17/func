@@ -35,9 +35,9 @@
       </section>
 
       <!-- 本月收支 -->
-      <div class="grid grid-cols-2 gap-3">
-        <StatCard label="本月收入" :value="incomeStr" tone="up" prefix="¥" />
-        <StatCard label="本月支出" :value="expenseStr" tone="down" prefix="¥" />
+      <div class="grid grid-cols-2 gap-3 md:grid-cols-4 md:items-stretch">
+        <StatCard label="本月收入" :value="incomeStr" tone="up" prefix="¥" class="md:col-span-2" />
+        <StatCard label="本月支出" :value="expenseStr" tone="down" prefix="¥" class="md:col-span-2" />
       </div>
 
       <!-- 快捷入口 -->
@@ -51,17 +51,19 @@
         </button>
       </div>
 
-      <!-- 近 6 月收支趋势 -->
-      <section v-if="trendLabels.length" class="card card-pad">
-        <span class="section-title mb-2">近 6 月收支</span>
-        <BarChart :labels="trendLabels" :series="trendSeries" :height="180" />
-      </section>
+      <div class="grid gap-4 lg:grid-cols-2">
+        <!-- 近 6 月收支趋势 -->
+        <section v-if="trendLabels.length" class="card card-pad">
+          <span class="section-title mb-2">近 6 月收支</span>
+          <BarChart :labels="trendLabels" :series="trendSeries" :height="180" />
+        </section>
 
-      <!-- 资产分配 -->
-      <section v-if="allocLabels.length" class="card card-pad">
-        <span class="section-title mb-3">资产分配</span>
-        <PieChart :labels="allocLabels" :values="allocValues" :height="180" doughnut show-legend />
-      </section>
+        <!-- 资产分配 -->
+        <section v-if="allocLabels.length" class="card card-pad">
+          <span class="section-title mb-3">资产分配</span>
+          <PieChart :labels="allocLabels" :values="allocValues" :height="180" doughnut show-legend />
+        </section>
+      </div>
 
       <!-- 定投状态 -->
       <section class="card card-pad">

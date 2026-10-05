@@ -173,6 +173,55 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true }
   })
 
+  // 后台用户禁用/启用
+  app.patch('/api/admin/panel/users/:id', { preHandler: requirePanel }, async (req, reply) => {
+    const email = await requirePanel(req, {} as FastifyReply)
+    const { id } = req.params as { id: string }
+    const { disabled } = (req.body || {}) as { disabled?: boolean }
+    const user = await prisma.user.findUnique({ where: { id } })
+    if (!user) return reply.code(404).send({ error: '用户不存在' })
+    if (user.role === 'admin') return reply.code(400).send({ error: '不能禁用管理员' })
+    await prisma.user.update({ where: { id }, data: { disabled: !!disabled } })
+    await audit(email!, disabled ? 'disable_user' : 'enable_user', id)
+    return { ok: true }
+  })
+
+  // 后台删除用户 (软删全部数据 + 匿名化)
+  app.delete('/api/admin/panel/users/:id', { preHandler: requirePanel }, async (req, reply) => {
+    const email = await requirePanel(req, {} as FastifyReply)
+    const { id } = req.params as { id: string }
+    const user = await prisma.user.findUnique({ where: { id } })
+    if (!user) return reply.code(404).send({ error: '用户不存在' })
+    if (user.role === 'admin') return reply.code(400).send({ error: '不能删除管理员' })
+    const now = new Date()
+    await prisma.$transaction([
+      prisma.transaction.updateMany({ where: { userId: id }, data: { deletedAt: now } }),
+      prisma.holding.updateMany({ where: { userId: id }, data: { deletedAt: now } }),
+      prisma.holdingTxn.updateMany({ where: { userId: id }, data: { deletedAt: now } }),
+      prisma.budget.updateMany({ where: { userId: id }, data: { deletedAt: now } }),
+      prisma.category.updateMany({ where: { userId: id }, data: { deletedAt: now } }),
+      prisma.dcaConfig.updateMany({ where: { userId: id }, data: { deletedAt: now } }),
+      prisma.dcaExecution.updateMany({ where: { userId: id }, data: { deletedAt: now } }),
+      prisma.dailyDcaConfig.updateMany({ where: { userId: id }, data: { deletedAt: now } }),
+      prisma.permanentTarget.updateMany({ where: { userId: id }, data: { deletedAt: now } }),
+      prisma.appSetting.updateMany({ where: { userId: id }, data: { deletedAt: now } }),
+      prisma.metaEntry.updateMany({ where: { userId: id }, data: { deletedAt: now } }),
+      prisma.valuationSnapshot.updateMany({ where: { userId: id }, data: { deletedAt: now } }),
+      prisma.dcaFund.updateMany({ where: { userId: id }, data: { deletedAt: now } }),
+      prisma.user.update({ where: { id }, data: { disabled: true, email: `deleted-${id.slice(0, 8)}@deleted.local`, passwordHash: null, githubId: null } })
+    ])
+    await audit(email!, 'delete_user', id)
+    return { ok: true }
+  })
+
+  // 后台手动同步行情
+  app.post('/api/admin/panel/sync-market', { preHandler: requirePanel }, async (req, reply) => {
+    const email = await requirePanel(req, {} as FastifyReply)
+    const r = await syncMarketNow()
+    await audit(email!, 'sync_market', undefined, { rows: r.rows, source: r.source })
+    return { ok: r.rows > 0, rows: r.rows, source: r.source }
+  })
+
   // ===== 用户站 admin 接口 (JWT, 兼容保留) =====
   app.get('/api/admin/users', { preHandler: requireAdmin }, async () => {
     const users = await prisma.user.findMany({

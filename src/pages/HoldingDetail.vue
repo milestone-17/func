@@ -14,10 +14,11 @@
         <div class="flex items-center gap-2 text-xs text-ink3">
           <span v-if="view" class="rounded-md bg-brand-soft px-1.5 py-0.5 text-brand">{{ categoryLabel(view.category) }}</span>
           <span v-if="view">T+{{ view.settleDays || 0 }}</span>
-          <span v-if="view && view.isClosed" class="rounded-md bg-rose-100 text-rose-700 px-1.5 py-0.5">已清仓</span>
+          <span v-if="view && view.isClosed" class="rounded-md bg-neg/15 text-neg px-1.5 py-0.5">已清仓</span>
         </div>
       </header>
 
+      <div v-if="view" class="grid gap-4 md:grid-cols-2">
       <!-- 净值/收益概览 -->
       <section v-if="view" class="card card-pad bg-gradient-to-br from-sky-500 to-sky-700 text-white border-0">
         <div class="text-xs text-white/80">持有份额 · 净值估算</div>
@@ -55,6 +56,7 @@
           <div class="money text-sm font-semibold">¥{{ formatYuan(view.totalCost) }}</div>
         </div>
       </section>
+      </div>
 
       <!-- 在途/冻结 -->
       <section v-if="view && (view.pendingBuyFen > 0 || view.pendingSellFen > 0 || view.frozenShares > 0)" class="card card-pad">
@@ -110,12 +112,12 @@
       </section>
 
       <!-- 底部固定操作栏 (位于 AppShell tabbar 之上) -->
-      <nav class="fixed inset-x-0 z-40 bg-surface border-t border-line px-4 py-2 grid grid-cols-4 gap-2 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]"
+      <nav class="fixed inset-x-0 md:left-56 md:right-0 z-40 bg-surface border-t border-line px-4 py-2 grid grid-cols-4 gap-2 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] mx-auto max-w-5xl"
         style="bottom: calc(60px + env(safe-area-inset-bottom, 0px))">
         <button @click="nav('add')" class="rounded-xl bg-pos/10 text-pos py-2 text-xs font-medium">+ 加仓</button>
         <button @click="nav('reduce')" :disabled="!view || view.quantity === 0" class="rounded-xl bg-neg/10 text-neg py-2 text-xs font-medium disabled:opacity-40">− 减仓</button>
         <button @click="nav('convert')" class="rounded-xl bg-brand-soft text-brand py-2 text-xs font-medium">⇄ 转换</button>
-        <button @click="nav('dca')" class="rounded-xl bg-amber-100 text-amber-700 py-2 text-xs font-medium">定投</button>
+        <button @click="nav('dca')" class="rounded-xl bg-warn/15 text-warn py-2 text-xs font-medium">定投</button>
       </nav>
     </div>
   </AppShell>

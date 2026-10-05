@@ -56,6 +56,16 @@ async function fetchFundQuotesFromEm(codes: string[]): Promise<FundQuoteRow[]> {
 
 interface MonthlyBarDto { date: string; open: number; close: number; high: number; low: number }
 
+/** 东财 secid → 腾讯代码映射 (A 股指数) */
+const TX_MONTHLY_MAP: Record<string, string> = {
+  '1.000001': 'sh000001',
+  '0.399001': 'sz399001',
+  '1.000300': 'sh000300',
+  '1.000905': 'sh000905',
+  '0.399006': 'sz399006',
+  '1.000688': 'sh000688'
+}
+
 /** 东财 push2his 月K (klt=103) */
 async function fetchMonthlyFromEm(secid: string): Promise<MonthlyBarDto[]> {
   const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${encodeURIComponent(secid)}&klt=103&fqt=1&lmt=10000&end=20500101&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55&ut=${UT}`
@@ -70,7 +80,45 @@ async function fetchMonthlyFromEm(secid: string): Promise<MonthlyBarDto[]> {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || ![o, c, h, l].every(Number.isFinite)) continue
     out.push({ date, open: o, close: c, high: h, low: l })
   }
+  if (!out.length) throw new Error('东财月K解析为空')
   return out
+}
+
+/** 腾讯月K兜底 (东财 push2his 对 node fetch 掐断 TLS 时的备源) */
+async function fetchMonthlyFromTx(secid: string): Promise<MonthlyBarDto[]> {
+  const tx = TX_MONTHLY_MAP[secid]
+  if (!tx) throw new Error(`该指数无腾讯备源: ${secid}`)
+  const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tx},month,,,320,qfq`
+  const res = await fetch(url, { headers: UA })
+  if (!res.ok) throw new Error(`腾讯月K HTTP ${res.status}`)
+  const json = (await res.json()) as { data?: Record<string, { month?: unknown[][]; qfqmonth?: unknown[][] }> }
+  const node = json?.data?.[tx]
+  const rows = node?.qfqmonth || node?.month || []
+  const out: MonthlyBarDto[] = []
+  for (const r of rows as unknown[][]) {
+    if (!Array.isArray(r) || r.length < 5) continue
+    const date = String(r[0] || '')
+    const o = Number(r[1]), c = Number(r[2]), h = Number(r[3]), l = Number(r[4])
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || ![o, c, h, l].every(Number.isFinite)) continue
+    out.push({ date, open: o, close: c, high: h, low: l })
+  }
+  if (!out.length) throw new Error('腾讯月K解析为空')
+  return out
+}
+
+/** 月K: 东财主源失败 → 腾讯兜底 */
+async function fetchMonthlyWithFallback(secid: string): Promise<MonthlyBarDto[]> {
+  try {
+    return await fetchMonthlyFromEm(secid)
+  } catch (e) {
+    try {
+      const bars = await fetchMonthlyFromTx(secid)
+      if (bars.length) return bars
+    } catch {
+      // 兜底也失败 → 抛主源错误
+    }
+    throw e
+  }
 }
 
 /** Yahoo chart 日K (美股/ETF 现价与周线; 服务器直连可能 429, 由缓存与前端兜底) */
@@ -129,12 +177,12 @@ export async function proxyRoutes(app: FastifyInstance): Promise<void> {
     }
   })
 
-  // 指数/股票 月K (12h 缓存)
+  // 指数/股票 月K (12h 缓存; 东财主源失败自动切腾讯兜底)
   app.get('/api/market/monthly', { preHandler: requireAuth }, async (req, reply) => {
     const { secid } = (req.query || {}) as { secid?: string }
     if (!secid || !/^[01]\.\d{6}$/.test(secid)) return reply.code(400).send({ error: 'secid 参数不合法' })
     try {
-      const bars = await cached(`monthly:${secid}`, 12 * 3600_000, () => fetchMonthlyFromEm(secid))
+      const bars = await cached(`monthly:${secid}`, 12 * 3600_000, () => fetchMonthlyWithFallback(secid))
       return { bars }
     } catch (e) {
       return reply.code(502).send({ error: `月K拉取失败: ${(e as Error).message}` })

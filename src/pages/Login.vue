@@ -212,6 +212,12 @@ async function guest(): Promise<void> {
   padding: 32px 28px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
 }
+@media (min-width: 768px) {
+  .login-card {
+    max-width: 420px;
+    padding: 40px 36px;
+  }
+}
 h1 {
   text-align: center;
   font-size: 22px;

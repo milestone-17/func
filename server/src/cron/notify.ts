@@ -3,23 +3,15 @@
  * SMTP 未配置时静默跳过 (不影响主服务); 单次循环异常只记日志。
  */
 import cron from 'node-cron'
+import dns from 'node:dns'
+
+// 行情源对 IPv6 出口不稳, 强制 IPv4 解析
+dns.setDefaultResultOrder('ipv4first')
 import { prisma } from '../lib/prisma'
 import { shanghaiNow, processUser, type NotifyConfigData } from '../lib/notification'
 import { sendNotificationMail } from '../lib/mailer'
-import { parsePush2hisKline, type MonthlyBar } from '../lib/channel'
+import { getShMonthlyBars } from '../lib/tx-quote'
 import type { Env } from '../env'
-
-const UT = 'fa5fd1943c7b386f172d6893dbfba10b'
-const UA = { 'User-Agent': 'Mozilla/5.0 (func-server)' }
-
-/** 东财 push2his 月K (klt=103), 上证全量 */
-async function fetchShMonthlyBars(): Promise<MonthlyBar[]> {
-  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${encodeURIComponent('1.000001')}&klt=103&fqt=1&lmt=10000&end=20500101&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55&ut=${UT}`
-  const res = await fetch(url, { headers: UA })
-  if (!res.ok) throw new Error(`东财月K HTTP ${res.status}`)
-  const json = (await res.json()) as { data?: { klines?: unknown } }
-  return parsePush2hisKline(json?.data?.klines)
-}
 
 /** 上证最新日收盘从月K最后一根取 (zoneOf 用月K自身 close), 此处返回 null 走默认 */
 async function loadShClose(): Promise<null> {
@@ -36,8 +28,9 @@ export async function tickNotify(env?: Env): Promise<void> {
     const configs = await prisma.notificationConfig.findMany()
     // 轻量预过滤, 只对可能命中的配置做后续 IO
     const candidates = configs.filter((c) => {
-      const d = c.data as Partial<NotifyConfigData & { lastSentSlot?: string }>
+      const d = c.data as Partial<NotifyConfigData & { lastSentSlot?: string; failCount?: number }>
       if (!d?.enabled) return false
+      if ((d.failCount ?? 0) >= 3) return false
       if (d.lastSentSlot === nowSh.date) return false
       if (d.time !== nowSh.time) return false
       if (d.frequency === 'weekly' && d.dayOfWeek !== nowSh.dayOfWeek) return false
@@ -60,7 +53,7 @@ export async function tickNotify(env?: Env): Promise<void> {
           cfg: c.data as unknown as NotifyConfigData,
           nowSh,
           send: (to, subject, html, text) => sendNotificationMail(to, subject, html, text),
-          loadChannelBars: fetchShMonthlyBars,
+          loadChannelBars: getShMonthlyBars,
           loadShClose
         })
         if (outcome.status !== 'skipped') {

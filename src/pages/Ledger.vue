@@ -13,7 +13,7 @@
       </div>
 
       <!-- 本月汇总 -->
-      <div v-if="monthSummary" class="card card-pad flex items-center justify-around divide-x divide-line">
+      <div v-if="monthSummary" class="card card-pad grid grid-cols-3 gap-2 md:flex md:items-center md:justify-around md:divide-x md:divide-line">
         <div class="text-center">
           <div class="text-[11px] text-ink3">收入</div>
           <div class="money text-base font-bold text-pos">+¥{{ formatYuan(monthSummary.income) }}</div>

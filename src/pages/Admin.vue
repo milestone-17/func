@@ -7,7 +7,7 @@
       </div>
 
       <!-- 统计 -->
-      <section class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <section class="grid grid-cols-2 gap-2 md:grid-cols-4">
         <div class="card card-pad text-center">
           <p class="text-2xl font-bold tabular-nums">{{ stats?.users.total ?? '—' }}</p>
           <p class="text-xs text-ink3">注册用户</p>

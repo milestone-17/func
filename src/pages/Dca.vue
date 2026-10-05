@@ -65,7 +65,7 @@
       </div>
 
       <!-- 周度自动执行结果提示 -->
-      <div v-if="autoExecMsg" class="card card-pad bg-emerald-50 border-emerald-200 text-emerald-800 text-xs">
+      <div v-if="autoExecMsg" class="card card-pad border-pos/30 bg-pos/10 text-pos text-xs">
         {{ autoExecMsg }}
       </div>
 
@@ -106,7 +106,7 @@
               {{ dca.deviationPct != null ? (dca.deviationPct > 0 ? '+' : '') + dca.deviationPct.toFixed(2) + '%' : '—' }}
             </Badge>
           </div>
-          <div class="mt-3 grid grid-cols-2 gap-2">
+          <div class="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
             <div class="rounded-xl bg-surface2 px-2.5 py-2">
               <div class="text-[11px] text-ink3">MA120 半年线</div>
               <div class="money text-sm font-semibold">{{ ma120 != null ? ma120.toFixed(4) : '—' }}</div>
@@ -177,7 +177,7 @@
             <span class="section-title">本月 4 周建议</span>
             <button @click="openEditor" class="text-xs text-brand font-medium">编辑分扣</button>
           </div>
-          <div class="space-y-2.5">
+          <div class="space-y-2.5 md:grid md:grid-cols-2 md:gap-3 md:space-y-0">
             <DcaSuggestionCard
               v-for="w in [1,2,3,4] as const"
               :key="w"

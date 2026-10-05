@@ -17,7 +17,8 @@ import { prisma } from '../src/lib/prisma'
 import { loadEnv } from '../src/env'
 import { setMailerEnv, sendNotificationMail } from '../src/lib/mailer'
 import { processUser, shanghaiNow, type NotifyConfigData } from '../src/lib/notification'
-import { parsePush2hisKline, type MonthlyBar } from '../src/lib/channel'
+import type { MonthlyBar } from '../src/lib/channel'
+import { getShMonthlyBars } from '../src/lib/tx-quote'
 
 const args = process.argv.slice(2)
 const months = Number(args.find(a => a.startsWith('--months='))?.split('=')[1] || 2)
@@ -33,14 +34,8 @@ if (months < 1 || months > 12) {
   process.exit(1)
 }
 
-const UT = 'fa5fd1943c7b386f172d6893dbfba10b'
-
 async function fetchShMonthlyBars(): Promise<MonthlyBar[]> {
-  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${encodeURIComponent('1.000001')}&klt=103&fqt=1&lmt=10000&end=20500101&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55&ut=${UT}`
-  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (func-sim)' } })
-  if (!res.ok) throw new Error(`东财月K HTTP ${res.status}`)
-  const json = (await res.json()) as { data?: { klines?: unknown } }
-  return parsePush2hisKline(json?.data?.klines)
+  return getShMonthlyBars()
 }
 
 /** 过去 N 个月的日期序列 (含今天, 倒推) */
@@ -128,6 +123,7 @@ async function main(): Promise<void> {
         send: async (to, subject, html, text) => {
           if (dryRun) return
           await sendNotificationMail(to, `[模拟] ${subject}`, html, text)
+          await new Promise(r => setTimeout(r, 5000)) // 避开 SMTP 频率限制
         },
         loadChannelBars: async () => bars,
         loadShClose: async () => null

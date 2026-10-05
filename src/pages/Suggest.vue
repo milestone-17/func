@@ -53,9 +53,9 @@
       </div>
 
       <!-- 拉取失败 toast -->
-      <div v-if="errorMsg" class="card card-pad bg-rose-50 border-rose-200 text-rose-700 text-sm">
+      <div v-if="errorMsg" class="card card-pad border-neg/30 bg-neg/10 text-sm text-neg">
         ⚠ {{ errorMsg }}
-        <button @click="errorMsg = ''" class="ml-2 text-rose-500 hover:underline">×</button>
+        <button @click="errorMsg = ''" class="ml-2 opacity-70 hover:opacity-100 hover:underline">×</button>
       </div>
     </div>
   </AppShell>

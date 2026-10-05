@@ -8,6 +8,7 @@ import {
   type NotifyConfigData, type DcaConfigLike, type IndexCloseRow
 } from '../src/lib/notification'
 import { parsePush2hisKline, findPivots, theilSenSlope, fitChannel, zoneOf } from '../src/lib/channel'
+import { parseTencentKline } from '../src/lib/tx-quote'
 
 // ---------------------------------------------------------------- 上海时间
 
@@ -409,5 +410,59 @@ describe('renderMail', () => {
     const m = renderMail({ dateISO: '2026-03-16', suggestions: [], channel: null })
     expect(m.text).toContain('暂无定投配置')
     expect(m.text).toContain('数据不可用')
+  })
+})
+
+
+// ---------------------------------------------------------------- 腾讯月K解析
+
+describe('parseTencentKline', () => {
+  it('正常解析: [[日期,开,收,高,低,量], ...] → MonthlyBar[] 升序', () => {
+    const payload = {
+      data: {
+        sh000001: {
+          month: [
+            ['2026-03-31', '3000.5', '3100.2', '3200.1', '2950.3', '100'],
+            ['2026-01-31', '2800.0', '2900.0', '3000.0', '2750.0', '80'],
+            ['2026-02-28', '2900.0', '3000.0', '3100.0', '2850.0', '90']
+          ]
+        }
+      }
+    }
+    const bars = parseTencentKline(payload)
+    expect(bars).toHaveLength(3)
+    expect(bars.map(b => b.date)).toEqual(['2026-01-31', '2026-02-28', '2026-03-31'])
+    expect(bars[0]).toEqual({ date: '2026-01-31', open: 2800, close: 2900, high: 3000, low: 2750 })
+  })
+
+  it('非数组行 / 缺字段 / 非法日期 → 跳过该行', () => {
+    const payload = {
+      data: { sh000001: { month: ['bad', null, ['2026-x1', '1', '2', '3', '4'], ['2026-01-31', 'a', 'b', 'c', 'd'], ['2026-01-31', '2800', '2900', '3000', '2750']] } }
+    }
+    const bars = parseTencentKline(payload)
+    expect(bars).toHaveLength(1)
+    expect(bars[0].date).toBe('2026-01-31')
+  })
+
+  it('非正数价格 → 跳过 (0 / 负数 / NaN)', () => {
+    const payload = {
+      data: { sh000001: { month: [['2026-01-31', '0', '2900', '3000', '2750'], ['2026-02-28', '2900', '-5', '3000', '2750'], ['2026-03-31', '3000', '3100', 'NaN', '2750']] } }
+    }
+    expect(parseTencentKline(payload)).toHaveLength(0)
+  })
+
+  it('data 缺失 / month 非数组 → 空数组 (不抛错)', () => {
+    expect(parseTencentKline({})).toEqual([])
+    expect(parseTencentKline(null)).toEqual([])
+    expect(parseTencentKline({ data: {} })).toEqual([])
+    expect(parseTencentKline({ data: { sh000001: {} } })).toEqual([])
+    expect(parseTencentKline({ data: { sh000001: { month: 'x' } } })).toEqual([])
+  })
+
+  it('多余列 (成交量等) → 忽略不影响解析', () => {
+    const payload = { data: { sh000001: { month: [['2026-01-31', '2800', '2900', '3000', '2750', '123456', 'extra']] } } }
+    const bars = parseTencentKline(payload)
+    expect(bars).toHaveLength(1)
+    expect(bars[0].close).toBe(2900)
   })
 })

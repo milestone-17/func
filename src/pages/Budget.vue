@@ -27,8 +27,9 @@
       <!-- 分配项 -->
       <section class="card card-pad space-y-2">
         <span class="section-title mb-1">分配明细</span>
-        <div v-for="(a, idx) in form.allocations" :key="idx"
-          class="flex items-center gap-2 rounded-xl bg-surface2/60 p-2">
+        <div class="space-y-2 md:grid md:grid-cols-2 md:gap-2 md:space-y-0">
+          <div v-for="(a, idx) in form.allocations" :key="idx"
+            class="flex items-center gap-2 rounded-xl bg-surface2/60 p-2">
           <select v-model="a.type" class="input !w-auto !py-1.5 !text-xs shrink-0">
             <option value="savings">储蓄</option>
             <option value="investment">投资</option>
@@ -44,14 +45,15 @@
           <button @click="removeAlloc(idx)" class="text-ink3 hover:text-neg p-1 shrink-0" aria-label="移除">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
+          </div>
         </div>
         <button @click="addAlloc" class="w-full rounded-xl border-2 border-dashed border-line py-2.5 text-sm text-ink3 transition hover:border-brand/40 hover:text-brand">
           + 添加分类
         </button>
       </section>
 
-      <div class="flex gap-2">
-        <button @click="save" class="btn-primary flex-1 !py-3">保存</button>
+      <div class="flex gap-2 md:justify-end">
+        <button @click="save" class="btn-primary flex-1 md:flex-none md:!px-8 !py-3">保存</button>
         <button @click="reset" class="btn-ghost !px-5">重置</button>
       </div>
 

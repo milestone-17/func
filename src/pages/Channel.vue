@@ -48,10 +48,10 @@
           <summary class="cursor-pointer font-medium text-ink">
             拟合明细（被剔除避雷针 {{ data.channel.excludedSpikes.length }} 根 · 参与枢轴 高{{ data.channel.pivotHighs.length }}/低{{ data.channel.pivotLows.length }}）
           </summary>
-          <div class="mt-2 space-y-2">
+          <div class="mt-2 grid gap-x-6 gap-y-2 md:grid-cols-3">
             <div v-if="data.channel.excludedSpikes.length > 0">
               <div class="text-[11px] text-ink3 mb-1">被剔除的避雷针（不参与顶线拟合）</div>
-              <div v-for="s in data.channel.excludedSpikes" :key="s.t" class="flex justify-between text-rose-600 dark:text-rose-400">
+              <div v-for="s in data.channel.excludedSpikes" :key="s.t" class="flex justify-between text-neg">
                 <span>{{ s.date.slice(0, 7) }}</span><span class="money">{{ s.value.toFixed(2) }}</span>
               </div>
             </div>
