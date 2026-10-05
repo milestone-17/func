@@ -1,0 +1,205 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  passwordHash  String?
+  provider      String    @default("email")
+  githubId      String?   @unique
+  emailVerified Boolean   @default(false)
+  lastImportAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("users")
+}
+
+model EmailCode {
+  id        String    @id @default(uuid())
+  email     String
+  codeHash  String
+  purpose   String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email, purpose])
+  @@map("email_codes")
+}
+
+model Transaction {
+  id         String    @id
+  userId     String
+  date       String
+  type       String
+  categoryId String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime
+  deletedAt  DateTime?
+  data       Json
+
+  @@index([userId, date])
+  @@index([userId, type])
+  @@map("transactions")
+}
+
+model Category {
+  id        String    @id
+  userId    String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  deletedAt DateTime?
+  data      Json
+
+  @@index([userId])
+  @@map("categories")
+}
+
+model Budget {
+  id        String    @id
+  userId    String
+  month     String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  deletedAt DateTime?
+  data      Json
+
+  @@index([userId, month])
+  @@map("budgets")
+}
+
+model Holding {
+  id        String    @id
+  userId    String
+  symbol    String
+  type      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  deletedAt DateTime?
+  data      Json
+
+  @@index([userId, symbol])
+  @@index([userId, type])
+  @@map("holdings")
+}
+
+model HoldingTxn {
+  id        String    @id
+  userId    String
+  holdingId String
+  date      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  deletedAt DateTime?
+  data      Json
+
+  @@index([userId, holdingId])
+  @@index([userId, date])
+  @@map("holding_txns")
+}
+
+model PermanentTarget {
+  id        String    @id
+  userId    String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  deletedAt DateTime?
+  data      Json
+
+  @@index([userId])
+  @@map("permanent_targets")
+}
+
+model DcaConfig {
+  id        String    @id
+  userId    String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  deletedAt DateTime?
+  data      Json
+
+  @@index([userId])
+  @@map("dca_configs")
+}
+
+model DcaExecution {
+  id        String    @id
+  userId    String
+  configId  String
+  month     String
+  weekIndex Int
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  deletedAt DateTime?
+  data      Json
+
+  @@index([userId, month])
+  @@index([userId, configId])
+  @@map("dca_executions")
+}
+
+model DailyDcaConfig {
+  id        String    @id
+  userId    String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  deletedAt DateTime?
+  data      Json
+
+  @@index([userId])
+  @@map("daily_dca_configs")
+}
+
+model AppSetting {
+  id        String    @id
+  userId    String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  deletedAt DateTime?
+  data      Json
+
+  @@map("app_settings")
+}
+
+model MetaEntry {
+  id        String    @id
+  userId    String
+  key       String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  deletedAt DateTime?
+  data      Json
+
+  @@index([userId, key])
+  @@map("meta_entries")
+}
+
+model ValuationSnapshot {
+  id        String    @id
+  userId    String
+  day       String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  deletedAt DateTime?
+  data      Json
+
+  @@index([userId, day])
+  @@map("valuation_snapshots")
+}
+
+model IndexData {
+  id     String @id
+  symbol String
+  date   String
+  data   Json
+
+  @@unique([symbol, date])
+  @@map("index_data")
+}
