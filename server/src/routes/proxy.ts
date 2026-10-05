@@ -95,6 +95,26 @@ async function fetchYahooChart(symbol: string, range: string, interval: string):
   return bars
 }
 
+/** 腾讯美股日K兜底 (Yahoo 429 时用; 仅支持字母代码, 纳指100=usNDX 等指数代码另有映射) */
+async function fetchTencentUsDaily(symbol: string): Promise<Array<{ date: string; close: number }>> {
+  const url = `https://web.ifzq.gtimg.cn/appstock/app/newfqkline/get?param=${encodeURIComponent(symbol.toLowerCase())},day,,,660,qfq`
+  const res = await fetch(url, { headers: UA })
+  if (!res.ok) throw new Error(`腾讯 HTTP ${res.status}`)
+  const json = await res.json()
+  const data = (json as { data?: Record<string, { qfqday?: unknown[][]; day?: unknown[][] }> }).data || {}
+  const node = Object.values(data)[0]
+  const rows = node?.qfqday || node?.day || []
+  const bars: Array<{ date: string; close: number }> = []
+  for (const r of rows as unknown[][]) {
+    if (!Array.isArray(r) || r.length < 3) continue
+    const date = String(r[0] || '')
+    const close = Number(r[2])
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(close) || close <= 0) continue
+    bars.push({ date, close })
+  }
+  return bars
+}
+
 export async function proxyRoutes(app: FastifyInstance): Promise<void> {
   // 基金净值批量 (60s 缓存)
   app.get('/api/market/fund-quotes', { preHandler: requireAuth }, async (req, reply) => {
@@ -131,8 +151,15 @@ export async function proxyRoutes(app: FastifyInstance): Promise<void> {
     try {
       const bars = await cached(key, ttl, () => fetchYahooChart(symbol, range, interval))
       return { bars }
-    } catch (e) {
-      return reply.code(502).send({ error: `Yahoo 拉取失败: ${(e as Error).message}` })
+    } catch (e1) {
+      // Yahoo 429/失败 → 腾讯日K兜底 (等长序列, 周线由前端按 close 聚合的场景少; 腾讯仅日K)
+      try {
+        const bars = await cached(`tx:${key}`, ttl, () => fetchTencentUsDaily(symbol))
+        if (bars.length > 0) return { bars }
+        throw e1
+      } catch {
+        return reply.code(502).send({ error: `Yahoo 拉取失败: ${(e1 as Error).message}` })
+      }
     }
   })
 }
