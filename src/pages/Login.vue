@@ -7,10 +7,11 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
-type Mode = 'login' | 'register' | 'reset'
+type Mode = 'login' | 'register' | 'reset' | 'guest'
 const mode = ref<Mode>('login')
 const email = ref('')
 const password = ref('')
+const confirmPassword = ref('')
 const code = ref('')
 const error = ref('')
 const loading = ref(false)
@@ -23,6 +24,7 @@ function switchMode(m: Mode): void {
   mode.value = m
   error.value = ''
   codeSent.value = false
+  confirmPassword.value = ''
 }
 
 async function sendCode(): Promise<void> {
@@ -44,6 +46,10 @@ async function sendCode(): Promise<void> {
 async function submit(): Promise<void> {
   if (loading.value) return
   error.value = ''
+  if (mode.value === 'register' && password.value !== confirmPassword.value) {
+    error.value = '两次输入的密码不一致'
+    return
+  }
   loading.value = true
   try {
     if (mode.value === 'login') {
@@ -52,7 +58,7 @@ async function submit(): Promise<void> {
       await auth.register(email.value, password.value, code.value)
     } else {
       await auth.resetPassword(email.value, code.value, password.value)
-      mode.value = 'login'
+      switchMode('login')
       error.value = '密码已重置, 请用新密码登录'
       return
     }
@@ -69,22 +75,53 @@ function github(): void {
   const redirect = encodeURIComponent((route.query.redirect as string) || '/')
   window.location.href = `/api/auth/github?redirect=${redirect}`
 }
+
+const guestLoading = ref(false)
+async function guest(): Promise<void> {
+  if (guestLoading.value) return
+  guestLoading.value = true
+  error.value = ''
+  try {
+    await auth.guestLogin()
+    const redirect = (route.query.redirect as string) || '/'
+    router.push(redirect)
+  } catch (e) {
+    error.value = (e as Error).message
+    guestLoading.value = false
+  }
+}
 </script>
 
 <template>
   <div class="login-page">
     <div class="login-card">
       <h1>本地财务</h1>
-      <p class="subtitle">{{ title }}</p>
 
-      <form @submit.prevent="submit">
+      <!-- 一级菜单: 登录 / 注册 / 访客体验 -->
+      <div v-if="mode !== 'reset'" class="tabs">
+        <button
+          :class="['tab', mode === 'login' ? 'tab-active' : '']"
+          @click="switchMode('login')"
+        >登录</button>
+        <button
+          :class="['tab', mode === 'register' ? 'tab-active' : '']"
+          @click="switchMode('register')"
+        >注册</button>
+        <button
+          :class="['tab', mode === 'guest' ? 'tab-active' : '']"
+          @click="switchMode('guest')"
+        >访客体验</button>
+      </div>
+      <p v-else class="subtitle">重置密码</p>
+
+      <form v-if="mode !== 'guest'" @submit.prevent="submit">
         <label>
           邮箱
           <input v-model="email" type="email" required placeholder="you@example.com" autocomplete="email" />
         </label>
 
         <label>
-          密码
+          {{ mode === 'reset' ? '新密码' : '密码' }}
           <input
             v-model="password"
             type="password"
@@ -92,6 +129,18 @@ function github(): void {
             minlength="8"
             placeholder="至少 8 位"
             :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
+          />
+        </label>
+
+        <label v-if="mode === 'register'">
+          确认密码
+          <input
+            v-model="confirmPassword"
+            type="password"
+            required
+            minlength="8"
+            placeholder="再输入一次密码"
+            autocomplete="new-password"
           />
         </label>
 
@@ -113,13 +162,34 @@ function github(): void {
         </button>
       </form>
 
-      <div class="divider">或</div>
-      <button class="btn-github" @click="github">使用 GitHub 登录</button>
+      <template v-if="mode === 'guest'">
+        <div class="guest-panel">
+          <p class="guest-desc">
+            无需注册, 一键创建临时体验账号, 立即试用全部功能。<br />
+            体验数据独立保存, 之后可随时退出或注册正式账号。
+          </p>
+          <button class="btn-primary" :disabled="guestLoading" @click="guest">
+            {{ guestLoading ? '正在进入...' : '一键体验' }}
+          </button>
+          <p v-if="error" class="error">{{ error }}</p>
+        </div>
+      </template>
 
-      <div class="mode-links">
-        <button v-if="mode !== 'login'" link @click="switchMode('login')">返回登录</button>
-        <button v-if="mode === 'login'" link @click="switchMode('register')">没有账号? 注册</button>
-        <button v-if="mode === 'login'" link @click="switchMode('reset')">忘记密码?</button>
+      <template v-else-if="mode === 'login'">
+        <div class="divider">或</div>
+        <button class="btn-github" @click="github">使用 GitHub 登录</button>
+        <div class="mode-links">
+          <button link @click="switchMode('reset')">忘记密码?</button>
+        </div>
+      </template>
+
+      <template v-else-if="mode === 'register'">
+        <div class="divider">或</div>
+        <button class="btn-github" @click="github">使用 GitHub 注册</button>
+      </template>
+
+      <div v-else class="mode-links">
+        <button link @click="switchMode('login')">返回登录</button>
       </div>
     </div>
   </div>
@@ -145,13 +215,37 @@ function github(): void {
 h1 {
   text-align: center;
   font-size: 22px;
-  margin-bottom: 4px;
+  margin-bottom: 18px;
 }
 .subtitle {
   text-align: center;
   color: #888;
   font-size: 14px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
+}
+.tabs {
+  display: flex;
+  background: #f2f3f5;
+  border-radius: 10px;
+  padding: 4px;
+  margin-bottom: 20px;
+}
+.tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 9px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tab-active {
+  background: #fff;
+  color: #171717;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 }
 form {
   display: flex;
@@ -222,6 +316,16 @@ input:focus {
   color: #bbb;
   font-size: 12px;
   margin: 20px 0 12px;
+}
+.guest-panel {
+  margin-top: 8px;
+}
+.guest-desc {
+  color: #888;
+  font-size: 13px;
+  line-height: 1.7;
+  text-align: center;
+  margin: 0 0 16px;
 }
 .btn-github {
   width: 100%;

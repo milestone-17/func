@@ -51,10 +51,16 @@ export const useAuthStore = defineStore('auth', () => {
     window.location.href = '/api/auth/github'
   }
 
+  /** 访客体验: 一键创建临时账号并登录 */
+  async function guestLogin(): Promise<void> {
+    const r = await api.post<{ user: CurrentUser }>('/api/auth/guest')
+    user.value = r.user
+  }
+
   /** 注册 401 全局处理 */
   setUnauthorizedHandler(() => {
     user.value = null
   })
 
-  return { user, initialized, isLoggedIn, init, sendCode, register, login, logout, resetPassword, githubLogin }
+  return { user, initialized, isLoggedIn, init, sendCode, register, login, logout, resetPassword, githubLogin, guestLogin }
 })

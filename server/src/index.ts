@@ -5,7 +5,7 @@ import { startMarketCron } from './cron/market'
 
 async function main(): Promise<void> {
   const env = loadEnv()
-  const app = await buildApp(env)
+  const app = await buildApp(env, { serveStatic: true })
   await prisma.$connect()
   startMarketCron()
   await app.listen({ port: env.port, host: '0.0.0.0' })

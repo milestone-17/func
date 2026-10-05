@@ -27,6 +27,14 @@ export default defineConfig({
       workbox: { globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'] }
     })
   ],
+  server: {
+    host: true,
+    port: 5173,
+    proxy: {
+      '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false },
+      '/func/api': { target: 'http://127.0.0.1:3000', changeOrigin: false, rewrite: (p) => p.replace(/^\/func/, '') }
+    }
+  },
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) }
   },

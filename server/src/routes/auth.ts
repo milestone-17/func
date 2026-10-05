@@ -104,6 +104,16 @@ export async function authRoutes(app: FastifyInstance, env: Env): Promise<void> 
     return { ok: true }
   })
 
+  // 访客体验: 一键创建临时账号并登录 (限速防灌库)
+  app.post('/api/auth/guest', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (_req, reply) => {
+    const suffix = Math.random().toString(36).slice(2, 10)
+    const user = await prisma.user.create({
+      data: { email: `guest-${suffix}@guest.local`, provider: 'guest', emailVerified: true }
+    })
+    setTokenCookie(app, reply, user.id)
+    return { user: { id: user.id, email: user.email, provider: user.provider } }
+  })
+
   // GitHub OAuth
   app.get('/api/auth/github', async (_req, reply) => {
     if (!env.githubClientId) return reply.code(503).send({ error: 'GitHub 登录未配置' })
