@@ -1,5 +1,5 @@
 process.env.NODE_ENV = 'test'
-process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://func:func_test@localhost:5433/func_test'
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://func_test:func_test@localhost:5432/func_test'
 process.env.JWT_SECRET = 'test-secret-test-secret-test-secret'
 process.env.SMTP_HOST = 'localhost'
 process.env.SMTP_USER = 'test@example.com'

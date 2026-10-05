@@ -15,6 +15,58 @@
         </button>
       </section>
 
+      <!-- 通知设置 -->
+      <section class="card card-pad space-y-3">
+        <span class="section-title">通知设置</span>
+        <p class="text-[11px] text-ink3 -mt-1">定时将智能定投建议与上证通道策略发送到通知邮箱</p>
+        <div v-if="notify.loading" class="text-xs text-ink3 py-2">加载中...</div>
+        <template v-else-if="notify.config">
+          <label class="flex items-center justify-between rounded-xl bg-surface2 px-3 py-2 text-xs cursor-pointer">
+            <span class="text-ink2">启用邮件通知</span>
+            <input type="checkbox" :checked="notify.config.enabled" @change="onNotifyToggle" class="h-4 w-4 accent-emerald-600" data-test="notify-enabled" />
+          </label>
+          <div>
+            <label class="label">通知邮箱</label>
+            <input v-model="notifyEmailDraft" type="email" placeholder="接收通知的邮箱" class="input" data-test="notify-email" />
+            <p class="mt-1 text-[11px] text-ink3">默认为注册邮箱, 可修改为其他邮箱</p>
+          </div>
+          <div>
+            <label class="label">通知频率</label>
+            <div class="flex rounded-xl bg-surface2 p-1">
+              <button @click="onFrequency('daily')"
+                :class="['flex-1 rounded-lg py-2 text-sm font-medium transition', notify.config.frequency === 'daily' ? 'bg-surface text-ink shadow-sm' : 'text-ink3']">
+                每天
+              </button>
+              <button @click="onFrequency('weekly')"
+                :class="['flex-1 rounded-lg py-2 text-sm font-medium transition', notify.config.frequency === 'weekly' ? 'bg-surface text-ink shadow-sm' : 'text-ink3']">
+                每周
+              </button>
+            </div>
+          </div>
+          <div v-if="notify.config.frequency === 'weekly'">
+            <label class="label">每周几</label>
+            <select v-model.number="notifyDayDraft" @change="onDayOfWeek" class="input" data-test="notify-day">
+              <option v-for="(label, i) in weekdayLabels" :key="i" :value="i">{{ label }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">通知时间</label>
+            <input v-model="notifyTimeDraft" type="time" class="input" data-test="notify-time" @change="onTime" />
+          </div>
+          <div class="flex gap-2">
+            <button @click="onNotifySave" :disabled="notify.saving"
+              class="flex-1 rounded-xl bg-pos py-2.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50" data-test="notify-save">
+              {{ notify.saving ? '保存中...' : '保存' }}
+            </button>
+            <button @click="onNotifyTest" :disabled="testing"
+              class="flex-1 rounded-xl bg-surface2 py-2.5 text-sm font-medium text-ink transition hover:bg-surface disabled:opacity-50" data-test="notify-test">
+              {{ testing ? '发送中...' : '发送测试邮件' }}
+            </button>
+          </div>
+          <p v-if="notifyMsg" :class="['text-xs', notifyOk ? 'text-pos' : 'text-neg']" data-test="notify-msg">{{ notifyMsg }}</p>
+        </template>
+      </section>
+
       <!-- 外观 -->
       <section class="card card-pad space-y-3">
         <span class="section-title">外观</span>
@@ -109,6 +161,7 @@ import AppShell from '@/components/AppShell.vue'
 import Badge from '@/components/Badge.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useAuthStore } from '@/stores/auth'
+import { useNotifyStore, WEEKDAY_LABELS } from '@/stores/notify'
 import { downloadBackup, importAll, isValidBundle } from '@/lib/backup'
 import type { Theme } from '@/types/settings'
 
@@ -117,6 +170,68 @@ const auth = useAuthStore()
 const router = useRouter()
 const importMsg = ref('')
 const importOk = ref(false)
+const notify = useNotifyStore()
+const weekdayLabels = WEEKDAY_LABELS
+const notifyEmailDraft = ref('')
+const notifyDayDraft = ref(1)
+const notifyTimeDraft = ref('08:30')
+const notifyMsg = ref('')
+const notifyOk = ref(false)
+const testing = ref(false)
+
+async function onNotifyToggle(e: Event) {
+  const enabled = (e.target as HTMLInputElement).checked
+  try {
+    await notify.save({ enabled })
+    notifyOk.value = true
+    notifyMsg.value = enabled ? '已开启邮件通知' : '已关闭邮件通知'
+  } catch (err: any) {
+    notifyOk.value = false
+    notifyMsg.value = '操作失败: ' + (err?.message || '未知错误')
+  }
+}
+function onFrequency(f: 'daily' | 'weekly') {
+  notify.save({ frequency: f }).catch(() => {})
+}
+async function onDayOfWeek() {
+  await notify.save({ dayOfWeek: notifyDayDraft.value })
+}
+async function onTime() {
+  if (!notifyTimeDraft.value) return
+  await notify.save({ time: notifyTimeDraft.value })
+}
+async function onNotifySave() {
+  const email = notifyEmailDraft.value.trim()
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    notifyOk.value = false
+    notifyMsg.value = '邮箱格式不合法'
+    return
+  }
+  try {
+    const patch: Record<string, unknown> = { enabled: notify.config?.enabled ?? false }
+    if (email) patch.notifyEmail = email
+    await notify.save(patch)
+    notifyOk.value = true
+    notifyMsg.value = '✓ 通知设置已保存'
+  } catch (err: any) {
+    notifyOk.value = false
+    notifyMsg.value = '保存失败: ' + (err?.message || '未知错误')
+  }
+}
+async function onNotifyTest() {
+  testing.value = true
+  notifyMsg.value = ''
+  try {
+    await notify.sendTest()
+    notifyOk.value = true
+    notifyMsg.value = '✓ 测试邮件已发送, 请查收'
+  } catch (err: any) {
+    notifyOk.value = false
+    notifyMsg.value = '发送失败: ' + (err?.message || '未知错误')
+  } finally {
+    testing.value = false
+  }
+}
 
 const themeOptions = [
   { value: 'light' as Theme, label: '浅色', icon: '☀️' },
@@ -124,7 +239,15 @@ const themeOptions = [
   { value: 'system' as Theme, label: '跟随系统', icon: '🖥️' }
 ]
 
-onMounted(async () => { if (!settings.loaded) await settings.load() })
+onMounted(async () => {
+  if (!settings.loaded) await settings.load()
+  try {
+    await notify.load()
+    notifyEmailDraft.value = notify.config?.notifyEmail || ''
+    notifyDayDraft.value = notify.config?.dayOfWeek ?? 1
+    notifyTimeDraft.value = notify.config?.time || '08:30'
+  } catch { /* 未登录 */ }
+})
 
 async function setTheme(t: Theme) {
   await settings.save({ theme: t })

@@ -4,6 +4,7 @@ import { RouterView } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import { useAuthStore } from '@/stores/auth'
 import { useDailyDcaStore } from '@/stores/dailyDca'
+import NotifyPromptBanner from '@/components/NotifyPromptBanner.vue'
 
 const settings = useSettingsStore()
 const auth = useAuthStore()
@@ -30,5 +31,6 @@ function applyTheme() {
 </script>
 
 <template>
+  <NotifyPromptBanner />
   <RouterView />
 </template>

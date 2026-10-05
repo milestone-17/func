@@ -11,6 +11,7 @@ import { importRoutes } from './routes/import'
 import { marketRoutes } from './routes/market'
 import { proxyRoutes } from './routes/proxy'
 import { adminRoutes } from './routes/admin'
+import { notificationRoutes } from './routes/notifications'
 import type { Env } from './env'
 
 export async function buildApp(env: Env, opts: { serveStatic?: boolean } = {}): Promise<FastifyInstance> {
@@ -27,6 +28,7 @@ export async function buildApp(env: Env, opts: { serveStatic?: boolean } = {}): 
   await marketRoutes(app)
   await proxyRoutes(app)
   await adminRoutes(app)
+  await notificationRoutes(app)
 
   // 单容器模式: 直接服务前端 dist (base=/func/), 生产由 Caddy 反代, 本地预览直连
   if (opts.serveStatic) {

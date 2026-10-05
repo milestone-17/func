@@ -206,3 +206,65 @@ model IndexData {
   @@unique([symbol, date])
   @@map("index_data")
 }
+model FundNavHistory {
+  id        String   @id @default(uuid())
+  code      String
+  date      String
+  nav       Float
+  accNav    Float?
+  source    String   @default("eastmoney")
+  createdAt DateTime @default(now())
+
+  @@unique([code, date])
+  @@index([code])
+  @@map("fund_nav_history")
+}
+
+model DcaFund {
+  id        String   @id
+  userId    String
+  code      String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@index([userId])
+  @@unique([userId, code])
+  @@map("dca_funds")
+}
+
+model AdminAudit {
+  id        String   @id @default(uuid())
+  actor     String
+  action    String
+  target    String?
+  detail    Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("admin_audit")
+}
+
+model NotificationConfig {
+  id        String    @id @default(uuid())
+  userId    String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  data      Json
+
+  @@map("notification_configs")
+}
+
+model NotificationLog {
+  id        String   @id @default(uuid())
+  userId    String
+  slot      String
+  status    String
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, slot])
+  @@index([createdAt])
+  @@map("notification_logs")
+}
