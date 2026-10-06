@@ -190,12 +190,15 @@ export async function syncDevlogFromGit(): Promise<number> {
   let n = 0
   for (const c of commits) {
     if (seen.has(c.hash) || !isSemanticCommit(c.first)) continue
+    // 语义区分: git 同步的都是已完成工作 — fix 是踩过并填掉的坑 (已解决, medium),
+    // feat/refactor/perf 是正常工作 (已解决, low)。「未解决」保留给手动记录/线上事故
+    const isFix = /^fix(\([^)]*\))?[!:]/.test(c.first)
     await prisma.pitfall.create({
       data: {
         title: c.first.slice(0, 120),
         content: `commit: ${c.hash}\nauthor: ${c.author}\ndate: ${c.date}\n\n${c.full.trim()}`,
-        severity: 'medium',
-        resolved: false,
+        severity: isFix ? 'medium' : 'low',
+        resolved: true,
         source: 'git'
       }
     })
