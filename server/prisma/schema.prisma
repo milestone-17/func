@@ -268,3 +268,40 @@ model NotificationLog {
   @@index([createdAt])
   @@map("notification_logs")
 }
+
+model Release {
+  id        String   @id @default(uuid())
+  version   String   @unique
+  title     String
+  notes     String   @default("")
+  source    String   @default("auto")
+  createdAt DateTime @default(now())
+
+  @@map("admin_releases")
+}
+
+model Pitfall {
+  id        String   @id @default(uuid())
+  title     String
+  content   String   @default("")
+  severity  String   @default("medium")
+  resolved  Boolean  @default(false)
+  source    String   @default("manual")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("admin_pitfalls")
+}
+
+model Incident {
+  id         String   @id @default(uuid())
+  title      String
+  content    String   @default("")
+  severity   String   @default("medium")
+  status     String   @default("open")
+  source     String   @default("manual")
+  startedAt  DateTime @default(now())
+  resolvedAt DateTime?
+
+  @@map("admin_incidents")
+}
