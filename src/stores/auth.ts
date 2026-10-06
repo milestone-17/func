@@ -5,12 +5,20 @@ import { api, setUnauthorizedHandler, type CurrentUser } from '@/lib/api'
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<CurrentUser | null>(null)
   const initialized = ref(false)
+  // 进行中的 init Promise: 并发调用者共享同一次探活, 避免"幂等短路拿到未完成状态"的竞态
+  let initPromise: Promise<void> | null = null
 
   const isLoggedIn = computed(() => user.value !== null)
 
   /** 启动时探活: 有会话则恢复用户。失败自动重试 (部署窗口/网络抖动不掉登录) */
-  async function init(): Promise<void> {
-    if (initialized.value) return
+  function init(): Promise<void> {
+    if (!initPromise) {
+      initPromise = doInit().finally(() => { initPromise = null })
+    }
+    return initPromise
+  }
+
+  async function doInit(): Promise<void> {
     initialized.value = true
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
@@ -24,7 +32,7 @@ export const useAuthStore = defineStore('auth', () => {
           await new Promise(res => setTimeout(res, 800 * (attempt + 1)))
           continue
         }
-        // 重试仍失败: 不置 initialized, 让守卫放行目标页, 由页面数据请求的 401 兜底
+        // 重试仍失败: 复位 initialized, 让守卫放行目标页, 由页面数据请求的 401 兜底
         initialized.value = false
         user.value = null
       }
