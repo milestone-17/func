@@ -71,6 +71,7 @@
             <div class="flex items-center gap-2">
               <span class="font-semibold text-ink truncate">{{ h.name }}</span>
               <span class="rounded-md bg-surface2 px-1.5 py-0.5 text-[10px] text-ink3">{{ h.symbol }}</span>
+              <button @click.stop="toggleKline(h.symbol)" :class="['rounded-md px-1.5 py-0.5 text-[10px] font-medium transition', klineExpanded === h.symbol ? 'bg-brand text-white' : 'bg-brand-soft text-brand']" title="点击查看K线">K线</button>
               <span v-if="h.category !== 'other'" class="rounded-md bg-brand-soft px-1.5 py-0.5 text-[10px] text-brand">{{ categoryLabel(h.category) }}</span>
             </div>
             <div class="mt-0.5 text-[11px] text-ink3">{{ marketLabel(h.market) }} · {{ currencyLabel(h.currency) }} · T+{{ h.settleDays || 0 }}</div>
@@ -96,8 +97,21 @@
           </div>
         </div>
 
+<!-- 确认中/在途提示: T+1/T+2 买入未到账时数量不含在途份额 -->
+        <div v-if="h.pendingBuyFen > 0" class="rounded-lg bg-amber-50 px-3 py-1.5 text-[11px] text-amber-600 dark:bg-amber-500/10">
+          买入确认中 ¥{{ fenToYuan(h.pendingBuyFen).toFixed(2) }}（T+{{ h.settleDays || 1 }} 到账后计入数量）
+        </div>
+        <div v-else-if="h.frozenShares > 0" class="rounded-lg bg-sky-50 px-3 py-1.5 text-[11px] text-sky-600 dark:bg-sky-500/10">
+          卖出在途 {{ h.frozenShares }} 份（到账后扣减）
+        </div>
+
         <!-- 周线状态徽章 (20/30/60 周线上·线下) -->
         <WeekMaBadges v-if="weekMa.rowOf(h.id)" :row="weekMa.rowOf(h.id)!" @retry="retryWeekMa(h)" />
+
+        <!-- K 线 (点击展开, 与自选页一致) -->
+        <div v-if="klineExpanded === h.symbol" class="border-t border-line pt-2">
+          <KlineChart :symbol="h.symbol" :height="240" />
+        </div>
 
         <!-- 盈亏 -->
         <div v-if="h.currentPrice != null" class="flex items-center justify-between rounded-xl px-3 py-2"
@@ -232,6 +246,22 @@
             <label class="label">数量</label>
             <input v-model.number="form.quantity" type="number" step="any" placeholder="0" class="input money" />
           </div>
+          <div>
+            <label class="label">买入状态</label>
+            <div class="flex gap-1.5">
+              <button type="button" @click="form.settled = true"
+                :class="['flex-1 rounded-lg py-2 text-xs font-medium', form.settled ? 'bg-brand text-white' : 'bg-surface2 text-ink2']">
+                已确认·可交易
+              </button>
+              <button type="button" @click="form.settled = false"
+                :class="['flex-1 rounded-lg py-2 text-xs font-medium', !form.settled ? 'bg-brand text-white' : 'bg-surface2 text-ink2']">
+                买入确认中
+              </button>
+            </div>
+            <div class="mt-1 text-[11px] text-ink3">
+              {{ form.settled ? '之前买入的份额已到手, 立即计入数量/均价' : '今天刚买入, T+1/T+2 到账后自动计入数量 (期间显示"确认中")' }}
+            </div>
+          </div>
           <div v-if="saveError" class="text-xs text-neg">{{ saveError }}</div>
           <button @click="save" :disabled="!canSave || saving" class="btn-primary w-full !py-3">{{ saving ? '保存中…' : '保存' }}</button>
         </div>
@@ -297,12 +327,13 @@ import AppShell from '@/components/AppShell.vue'
 import AmountInput from '@/components/AmountInput.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import WeekMaBadges from '@/components/WeekMaBadges.vue'
+import KlineChart from '@/components/KlineChart.vue'
 import { usePortfolioStore } from '@/stores/portfolio'
 import { useSettingsStore } from '@/stores/settings'
 import { useWeekMaStore } from '@/stores/weekMa'
 import { formatYuan, fenToYuan, yuanToFen } from '@/lib/money'
 import { inferCategory } from '@/lib/category'
-import { confirmDateOf } from '@/lib/settlement'
+import { confirmDateOf, suggestSettleDays, addTradingDays } from '@/lib/settlement'
 import { planConversion } from '@/lib/conversion'
 import type { Market, Currency, HoldingType, HoldingCategory } from '@/types/portfolio'
 
@@ -316,6 +347,12 @@ const settings = useSettingsStore()
 const weekMa = useWeekMaStore()
 const route = useRoute()
 const router = useRouter()
+
+/** K 线展开状态 (按 symbol, 同一时间只展开一张) */
+const klineExpanded = ref<string | null>(null)
+function toggleKline(symbol: string): void {
+  klineExpanded.value = klineExpanded.value === symbol ? null : symbol
+}
 
 function goDetail(id: string) {
   router.push(`/holding/${id}`)
@@ -458,8 +495,8 @@ async function retryWeekMa(h: HoldingView) {
 }
 
 const creating = ref(false)
-const form = ref<{ symbol: string; name: string; market: Market; type: HoldingType; category: HoldingCategory; currency: Currency; avgCost: number | null; quantity: number }>({
-  symbol: '', name: '', market: 'US', type: 'etf', category: 'other', currency: 'USD', avgCost: null, quantity: 0
+const form = ref<{ symbol: string; name: string; market: Market; type: HoldingType; category: HoldingCategory; currency: Currency; avgCost: number | null; quantity: number; settled: boolean }>({
+  symbol: '', name: '', market: 'US', type: 'etf', category: 'other', currency: 'USD', avgCost: null, quantity: 0, settled: true
 })
 const canSave = computed(() => !!form.value.symbol && !!form.value.name && form.value.avgCost != null && form.value.quantity > 0)
 
@@ -548,7 +585,7 @@ async function resolveSymbol() {
 }
 
 function openCreate() {
-  form.value = { symbol: '', name: '', market: 'US', type: 'etf', category: 'other', currency: 'USD', avgCost: null, quantity: 0 }
+  form.value = { symbol: '', name: '', market: 'US', type: 'etf', category: 'other', currency: 'USD', avgCost: null, quantity: 0, settled: true }
   categoryTouched.value = false
   resolving.value = false
   resolveMsg.value = ''
@@ -580,8 +617,14 @@ async function save() {
       currency, type: form.value.type, category: form.value.category, quantity: form.value.quantity, avgCost: form.value.avgCost!,
       currentPrice: null, currentPriceAt: null
     })
+    // 买入日期决定结算: 已确认 → 回退足够多的交易日 (历史买入, 立即计入数量);
+    // 确认中 → 今天 (T+1/T+2 到账后自动计入)。多退 3 个交易日覆盖长假近似。
+    const settleDays = suggestSettleDays(form.value.name)
+    const buyDate = form.value.settled
+      ? addTradingDays(new Date().toISOString().slice(0, 10), -(Math.max(settleDays, 1) + 3))
+      : new Date().toISOString().slice(0, 10)
     await portfolio.addTxn({
-      holdingId: holding.id, side: 'buy', date: new Date().toISOString().slice(0, 10),
+      holdingId: holding.id, side: 'buy', date: buyDate,
       price: form.value.avgCost!, quantity: form.value.quantity, fee: 0
     })
     creating.value = false
