@@ -7,9 +7,10 @@ import {
   fetchSkillFiles,
   fetchSkillFile,
   fetchSkillHistory,
-  fetchSkillDiff
+  fetchSkillDiff,
+  fetchSkillValidate
 } from '@/service/api/skills';
-import type { SkillMeta, SkillFileMeta, SkillCommit } from '@/service/api/skills';
+import type { SkillMeta, SkillFileMeta, SkillCommit, SkillValidateReport } from '@/service/api/skills';
 import { fmtTime2 } from '@/service/api/records';
 
 defineOptions({ name: 'SkillsView' });
@@ -31,6 +32,17 @@ const diffFrom = ref('');
 const diffTo = ref(''); // 空 = 工作区
 const diffText = ref('');
 const diffLoading = ref(false);
+
+// ===== 巡检状态 =====
+const report = ref<SkillValidateReport | null>(null);
+const checkLoading = ref(false);
+
+async function runCheck() {
+  checkLoading.value = true;
+  const { data, error } = await fetchSkillValidate();
+  checkLoading.value = false;
+  if (!error && data) report.value = data;
+}
 
 /** 简易 markdown → html (标题/列表/代码/表格/链接/粗体/行内代码) */
 function renderMd(md: string): string {
@@ -172,6 +184,7 @@ async function loadDiff() {
 function onTab(name: string) {
   if (name === 'history') loadHistory();
   if (name === 'diff') loadDiff();
+  if (name === 'check' && !report.value) runCheck();
 }
 
 function fmtDate(iso: string | null): string {
@@ -281,6 +294,22 @@ onMounted(load);
           </div>
           <pre v-if="diffText" class="diff-view"><code><span v-for="(l, i) in diffText.split('\n')" :key="i" :class="diffLineClass(l)">{{ l || ' ' }}</span></code></pre>
           <el-empty v-else-if="!diffLoading" description="选择版本后点击对比" :image-size="60" />
+        </el-tab-pane>
+        <el-tab-pane label="健康巡检" name="check">
+          <div class="mb-12px flex items-center gap-12px">
+            <el-button type="primary" size="small" :loading="checkLoading" @click="runCheck">运行巡检</el-button>
+            <span v-if="report" class="text-12px" :class="report.ok ? 'text-green-600' : 'text-red-500'">
+              {{ report.ok ? '✓ 通过' : `✗ ${report.errors.length} 个错误` }}
+              · {{ report.stats.skills }} skills / {{ report.stats.docs }} 文档 / {{ report.stats.anchors }} 代码锚点
+            </span>
+            <span v-else class="text-12px text-gray-400">校验: 结构完整 / 索引同步 / 代码锚点存在 / 文档死链</span>
+          </div>
+          <template v-if="report">
+            <el-alert v-if="report.ok && !report.warns.length" type="success" :closable="false" title="知识库健康: 无漂移" />
+            <div v-for="(e, i) in report.errors" :key="'e' + i" class="mb-4px rounded-4px bg-red-50 px-10px py-6px text-13px text-red-600">{{ e }}</div>
+            <div v-for="(w, i) in report.warns" :key="'w' + i" class="mb-4px rounded-4px bg-orange-50 px-10px py-6px text-13px text-orange-500">{{ w }}</div>
+          </template>
+          <el-empty v-else-if="!checkLoading" description="点击「运行巡检」检查文档与代码的漂移" :image-size="60" />
         </el-tab-pane>
       </el-tabs>
     </el-card>

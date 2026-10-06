@@ -20,7 +20,7 @@ alwaysApply: false
 
 ## 关键不变量
 
-1. 持仓数量 = Σ(买入份额) − Σ(卖出份额)，不允许为负（`src/lib/ledger-sync.ts#rebuildLedger`）
+1. 持仓数量 = Σ(买入份额) − Σ(卖出份额)，不允许为负（同步入口 `src/lib/ledger-sync.ts#syncInvestToLedger`）
 2. 成本 = Σ(买入金额) − Σ(卖出金额×卖出比例)，摊薄成本法
 3. 账本同步必须幂等：同一份流水重放得到相同持仓
 
@@ -35,3 +35,5 @@ alwaysApply: false
 - `src/lib/ledger-sync.ts`
 - `src/lib/settlement.ts`
 - `server/prisma/schema.prisma`（Transaction/Holding 模型字段）
+
+细节文档 `references/ledger-sync.md` 中的流程描述如与代码不符, 以代码为准并回改文档

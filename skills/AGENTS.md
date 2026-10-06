@@ -30,6 +30,6 @@
 ## 知识维护流程
 
 1. 新增/修改知识 → 编辑对应 `skills/<name>/SKILL.md` 或 `references/*.md`
-2. 引用代码必须带相对路径 + 函数/行号锚点，如 `server/src/lib/settlement.ts#calcDca`
+2. 引用代码必须带相对路径 + 函数/行号锚点，如 `src/lib/settlement.ts#isSettled`
 3. git commit 提交（迭代历史由 git 记录，后台可查看）
 4. 更新本索引中该 skill 的一句话概览（如语义变化）

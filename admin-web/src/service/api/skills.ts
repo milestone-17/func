@@ -53,3 +53,14 @@ export function fetchSkillDiff(relPath: string, from: string, to = '') {
     params: { path: relPath, from, to }
   });
 }
+
+export interface SkillValidateReport {
+  ok: boolean;
+  errors: string[];
+  warns: string[];
+  stats: { docs: number; skills: number; anchors: number };
+}
+
+export function fetchSkillValidate() {
+  return request<SkillValidateReport>({ url: '/api/admin/panel/skills/validate', method: 'get' });
+}

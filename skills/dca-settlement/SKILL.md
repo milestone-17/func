@@ -12,7 +12,7 @@ alwaysApply: false
 
 ## DCA 模拟引擎
 
-- 入口：`src/lib/settlement.ts#runDcaSim`
+- 结算日历：`src/lib/settlement.ts#isSettled` / `#confirmDateOf` / `#suggestSettleDays`（T+N 确认、建议结算天数）
 - 输入：定投计划（周期/金额/基金代码）+ 历史净值序列
 - 输出：每期扣款记录、累计份额、市值曲线、收益率
 

@@ -13,7 +13,7 @@ alwaysApply: false
 
 - Fastify 5 + TypeScript，入口 `server/src/index.ts` → `buildApp`（`server/src/app.ts`）
 - 路由按域拆分：auth/crud/import/market/proxy/admin/notifications（`server/src/routes/`）
-- ORM：Prisma + SQLite，schema 在 `server/prisma/schema.prisma`，迁移用 `prisma migrate`
+- ORM：Prisma + SQLite，schema 在 `server/prisma/schema.prisma`（结算逻辑在前端 `src/lib/settlement.ts`，服务端不含），迁移用 `prisma migrate`
 - 认证：用户 JWT（@fastify/jwt, cookie func_token）；管理后台独立 HMAC token（admin_token, 2h, kind=admin）
 
 ## 行情数据
@@ -37,3 +37,4 @@ alwaysApply: false
 - `server/src/app.ts`（注册路由顺序、静态托管）
 - `server/prisma/schema.prisma`（模型字段）
 - 修改 schema 后必须 `prisma migrate dev` 并提交迁移目录
+- `server/src/lib/skill-repo.ts`（skill 知识库仓库层）
