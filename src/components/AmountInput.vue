@@ -4,6 +4,7 @@
     <div class="flex items-center gap-1 rounded-xl border border-line bg-surface px-3 transition focus-within:ring-2 focus-within:ring-brand/25 focus-within:border-brand/60">
       <span class="text-ink3 font-medium">¥</span>
       <input
+        ref="inputEl"
         :value="displayValue"
         @input="onInput"
         type="text"
@@ -17,7 +18,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { yuanToFen, fenToYuan } from '@/lib/money'
 
 const props = defineProps<{
@@ -27,8 +28,16 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'update:modelValue': [v: number | null] }>()
 
+const inputEl = ref<HTMLInputElement | null>(null)
+
 const error = ref<string | null>(null)
 const text = ref<string>(props.modelValue != null ? String(fenToYuan(props.modelValue)) : '')
+
+// 外部异步加载配置后回显 (内部正在编辑时不覆盖用户输入)
+watch(() => props.modelValue, (v) => {
+  if (document.activeElement === inputEl.value) return
+  text.value = v != null ? String(fenToYuan(v)) : ''
+})
 
 const displayValue = computed(() => text.value)
 

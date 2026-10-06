@@ -191,7 +191,7 @@
           </div>
           <div>
             <label class="label">代码</label>
-            <input v-model="form.symbol" @blur="resolveSymbol" type="text" placeholder="如 QQQ / 600519" class="input" />
+            <input v-model="form.symbol" @blur="onSymbolBlur" type="text" placeholder="如 QQQ / 600519" class="input" />
             <div v-if="resolving" class="mt-1 text-[11px] text-ink3">正在识别代码信息…</div>
             <div v-else-if="resolveMsg" :class="['mt-1 text-[11px]', resolveOk ? 'text-pos' : 'text-warn']">{{ resolveMsg }}</div>
           </div>
@@ -232,7 +232,8 @@
             <label class="label">数量</label>
             <input v-model.number="form.quantity" type="number" step="any" placeholder="0" class="input money" />
           </div>
-          <button @click="save" :disabled="!canSave" class="btn-primary w-full !py-3">保存</button>
+          <div v-if="saveError" class="text-xs text-neg">{{ saveError }}</div>
+          <button @click="save" :disabled="!canSave || saving" class="btn-primary w-full !py-3">{{ saving ? '保存中…' : '保存' }}</button>
         </div>
       </div>
 
@@ -496,19 +497,21 @@ const resolveOk = ref(false)
 let resolveTimer: ReturnType<typeof setTimeout> | null = null
 let lastResolvedKey = ''
 
-/** 6 位纯数字 → A股/基金 (CN), 其他 → 美股 (US) */
-function guessMarketBySymbol(sym: string): Market {
-  return /^\d{6}$/.test(sym) ? 'CN' : 'US'
-}
-
 function resolveSymbolDebounced() {
   if (resolveTimer) clearTimeout(resolveTimer)
   resolveTimer = setTimeout(resolveSymbol, 600)
 }
 
+function onSymbolBlur() {
+  const sym = form.value.symbol.trim()
+  // 仅 6 位纯数字 (A股/场内基金代码) 才自动识别; 美股/港股代码不查基金源, 避免错配 (如 QQQ→340006)
+  if (creating.value && /^\d{6}$/.test(sym)) resolveSymbol()
+}
+
 async function resolveSymbol() {
   const sym = form.value.symbol.trim()
   if (!sym || sym === lastResolvedKey) return
+  if (!/^\d{6}$/.test(sym)) return
   // 名称已手动填写时不覆盖
   const nameManual = form.value.name.trim().length > 0
   lastResolvedKey = sym
@@ -517,14 +520,15 @@ async function resolveSymbol() {
   try {
     const { fundApi } = await import('@/repos/fundRepo')
     const items = await fundApi.search(sym)
-    const hit = items.find(i => i.code === sym) || items[0]
+    // 只接受代码完全一致的命中, 禁止模糊匹配 (防止错配到其他基金)
+    const hit = items.find(i => i.code === sym)
     if (hit) {
       if (!nameManual) form.value.name = hit.name
-      // 自动纠正市场: 6 位数字 → CN
-      if (/^\d{6}$/.test(hit.code) && form.value.market !== 'CN') {
+      // 6 位代码 → A股, 市场与货币自动纠正
+      if (form.value.market !== 'CN') {
         form.value.market = 'CN'
       }
-      form.value.currency = form.value.market === 'US' ? 'USD' : 'CNY'
+      form.value.currency = 'CNY'
       if (!categoryTouched.value) {
         form.value.category = inferCategory(form.value.name, form.value.symbol)
         applyCategoryTypeDefault()
@@ -550,6 +554,8 @@ function openCreate() {
   resolveMsg.value = ''
   resolveOk.value = false
   lastResolvedKey = ''
+  saveError.value = ''
+  saving.value = false
   creating.value = true
 }
 
@@ -561,19 +567,29 @@ async function reclassify() {
   syncMsg.value = n > 0 ? `已自动分类 ${n} 只持仓` : '没有需要分类的「其他」持仓'
 }
 
+const saving = ref(false)
+const saveError = ref('')
 async function save() {
-  if (!canSave.value) return
-  const currency: Currency = form.value.market === 'US' ? 'USD' : 'CNY'
-  const holding = await portfolio.addHolding({
-    symbol: form.value.symbol, name: form.value.name, market: form.value.market,
-    currency, type: form.value.type, category: form.value.category, quantity: form.value.quantity, avgCost: form.value.avgCost!,
-    currentPrice: null, currentPriceAt: null
-  })
-  await portfolio.addTxn({
-    holdingId: holding.id, side: 'buy', date: new Date().toISOString().slice(0, 10),
-    price: form.value.avgCost!, quantity: form.value.quantity, fee: 0
-  })
-  creating.value = false
+  if (!canSave.value || saving.value) return
+  saving.value = true
+  saveError.value = ''
+  try {
+    const currency: Currency = form.value.market === 'US' ? 'USD' : 'CNY'
+    const holding = await portfolio.addHolding({
+      symbol: form.value.symbol.trim(), name: form.value.name.trim(), market: form.value.market,
+      currency, type: form.value.type, category: form.value.category, quantity: form.value.quantity, avgCost: form.value.avgCost!,
+      currentPrice: null, currentPriceAt: null
+    })
+    await portfolio.addTxn({
+      holdingId: holding.id, side: 'buy', date: new Date().toISOString().slice(0, 10),
+      price: form.value.avgCost!, quantity: form.value.quantity, fee: 0
+    })
+    creating.value = false
+  } catch (e) {
+    saveError.value = '保存失败: ' + ((e as Error)?.message || '网络异常, 请重试')
+  } finally {
+    saving.value = false
+  }
 }
 
 const confirming = ref(false)

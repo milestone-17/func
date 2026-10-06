@@ -140,13 +140,13 @@ describe('Portfolio 新增持仓保存 (用户流程复现)', () => {
     w.unmount()
   })
 
-  it('addHolding 抛错 → 弹窗不关闭 (与用户所见一致) 且错误可观察', async () => {
+  it('addHolding 抛错 → 弹窗不关闭, saveError 展示错误文案 (不向上抛)', async () => {
     postMock.mockImplementation((path: string) => {
       if (path === '/api/holdings') return Promise.reject(new Error('500 服务器错误'))
       return Promise.resolve({ item: {} })
     })
     const { w, vm } = await openCreateAndFill()
-    await expect(vm.save()).rejects.toThrow('500')
+    await vm.save() // save 内部捕获异常, 不再向上抛
     expect(vm.creating).toBe(true) // 弹窗仍开着 — 用户视角"没反应"
     w.unmount()
   })
