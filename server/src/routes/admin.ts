@@ -4,8 +4,9 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { requireAuth } from '../plugins/auth'
 import { syncMarketNow, setSourcePriority, getSourcePriority } from '../cron/market'
-import { SOURCE_PRIORITY } from '../lib/market-fetcher'
+import { SOURCE_PRIORITY, getSourceHealthSnapshot } from '../lib/market-fetcher'
 import type { SourceId } from '../lib/market-fetcher'
+import { savePriorityToDb } from '../lib/source-config'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { execFile } from 'node:child_process'
@@ -43,7 +44,7 @@ function verifyAdminToken(secret: string, token: string): string | null {
 }
 
 /** 独立后台守卫: admin_token Cookie (不进用户站会话) */
-async function requirePanel(req: FastifyRequest, reply: FastifyReply): Promise<string | null> {
+export async function requirePanel(req: FastifyRequest, reply: FastifyReply): Promise<string | null> {
   const secret = process.env.JWT_SECRET || ''
   const token = (req.cookies as Record<string, string | undefined>)[ADMIN_COOKIE]
   const email = token ? verifyAdminToken(secret, token) : null
@@ -365,7 +366,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         latestDate: latest?.date ?? null,
         latestSource: (latest?.data as { source?: string } | null)?.source ?? null,
         sourcePriority: getSourcePriority()
-      }
+      },
+      sourceHealth: getSourceHealthSnapshot()
     }
   })
 
@@ -376,6 +378,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: 'priority 需为全部源的全排列' })
     }
     setSourcePriority(priority)
+    try {
+      await savePriorityToDb(priority as SourceId[])
+    } catch (e) {
+      req.log.warn({ err: e }, 'save source priority to db failed')
+    }
     await audit(panelEmail(req), 'set_source_priority', undefined, { priority })
     return { ok: true, priority: getSourcePriority() }
   })
