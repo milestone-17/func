@@ -13,7 +13,7 @@
           :class="['rounded-md px-1.5 py-0.5 text-[11px] transition', fq === f.v ? 'bg-surface2 text-ink font-medium' : 'text-ink3 hover:text-ink']">
           {{ f.label }}
         </button>
-        <button v-if="view === 'day' && kind === 'ohlc'" @click="showBench = !showBench" title="叠加沪深300对比"
+        <button v-if="view === 'day'" @click="showBench = !showBench" title="叠加沪深300对比"
           :class="['rounded-md px-1.5 py-0.5 text-[11px] transition', showBench ? 'bg-surface2 text-ink font-medium' : 'text-ink3 hover:text-ink']">
           对比沪深300
         </button>
@@ -38,7 +38,12 @@
         </span>
         <span v-if="benchOn" class="text-orange-400">沪深300 {{ benchChg >= 0 ? '+' : '' }}{{ benchChg.toFixed(2) }}%</span>
       </template>
-      <span v-else class="text-ink3">场外基金无盘口价 · 以单位净值绘蜡烛</span>
+      <template v-else>
+        <span class="text-ink3">净值走势</span>
+        <span v-if="navChg != null" :class="navChg >= 0 ? 'text-pos' : 'text-neg'">{{ navChg >= 0 ? '+' : '' }}{{ navChg.toFixed(2) }}%</span>
+        <span v-if="benchOn" class="text-orange-400">沪深300 {{ benchChg >= 0 ? '+' : '' }}{{ benchChg.toFixed(2) }}%</span>
+        <span v-else-if="showBench" class="text-ink3">沪深300 加载中…</span>
+      </template>
     </div>
 
     <div class="relative w-full" :style="{ height: height + 'px' }">
@@ -250,6 +255,13 @@ const maRows = computed(() => {
   const idx = hover.value != null ? hover.value : visible.value.length - 1
   return MA_PERIODS.map(p => ({ p, v: maOf(idx, p) }))
 })
+/** 净值区间涨幅 (%) — 窗口末根 vs 首根 */
+const navChg = computed(() => {
+  const d = visible.value
+  if (kind.value !== 'nav' || d.length < 2) return null
+  return ((d[d.length - 1].close - d[0].close) / d[0].close) * 100
+})
+
 /** 基准归一化百分比序列 (窗口内, 与蜡烛逐根对齐) */
 const benchPcts = computed(() => {
   const b = benchBars.value
@@ -287,7 +299,9 @@ function draw(): void {
 
   const data = visible.value
   if (data.length < 2) return
-  const isNav = kind.value === 'nav'
+  if (kind.value === 'nav') { drawNavChart(ctx, cssW, cssH, data); return }
+
+  const isNav = false
 
   const padL = 6, padR = 56, padT = 4, padB = 16
   const plotW = cssW - padL - padR
@@ -448,6 +462,138 @@ function draw(): void {
       ctx.fillStyle = 'rgba(30,30,30,0.82)'
       ctx.fillRect(padL + 2, ly, w, 14)
       ctx.fillStyle = chg != null && ln.includes('%') && chg < 0 ? '#7ee2a8' : '#eee'
+      ctx.fillText(ln, padL + 7, ly + 1)
+      ly += 15
+    }
+  }
+}
+
+/** 场外基金净值走势图 (天天基金风格): 蓝线 + 渐变面积 + 最新净值标签 + 悬停面板 + 对比线 */
+function drawNavChart(ctx: CanvasRenderingContext2D, cssW: number, cssH: number, data: KlineBar[]): void {
+  const padL = 6, padR = 56, padT = 8, padB = 16
+  const plotW = cssW - padL - padR
+  const mainH = cssH - padT - padB
+  const step = plotW / (data.length - 1)
+
+  // 范围: 净值 (+对比归一化值)
+  let lo = Infinity, hi = -Infinity
+  for (const b of data) { if (b.close < lo) lo = b.close; if (b.close > hi) hi = b.close }
+  const bp = benchOn.value ? benchPcts.value : []
+  const baseNav = data[0].close
+  const benchVals: Array<number | null> = bp.map(p => (p == null ? null : baseNav * (1 + p)))
+  for (const v of benchVals) {
+    if (v == null) continue
+    if (v < lo) lo = v
+    if (v > hi) hi = v
+  }
+  const span = (hi - lo) * 0.08 || baseNav * 0.01
+  hi += span; lo -= span
+  const xOf = (i: number) => padL + i * step
+  const yOf = (v: number) => padT + ((hi - v) / (hi - lo)) * mainH
+
+  // 网格 + 价格轴
+  ctx.font = '10px ui-sans-serif, system-ui'
+  ctx.textBaseline = 'middle'
+  for (let i = 0; i <= 4; i++) {
+    const v = lo + ((hi - lo) * i) / 4
+    const y = yOf(v)
+    ctx.strokeStyle = GRID; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke()
+    ctx.fillStyle = AXIS; ctx.textAlign = 'left'
+    ctx.fillText(fmtPrice(v), padL + plotW + 4, y)
+  }
+
+  // 渐变面积 (先画, 在线下层)
+  const grad = ctx.createLinearGradient(0, padT, 0, padT + mainH)
+  grad.addColorStop(0, 'rgba(79,142,255,0.28)')
+  grad.addColorStop(1, 'rgba(79,142,255,0.02)')
+  ctx.beginPath()
+  ctx.moveTo(xOf(0), yOf(data[0].close))
+  for (let i = 1; i < data.length; i++) ctx.lineTo(xOf(i), yOf(data[i].close))
+  ctx.lineTo(xOf(data.length - 1), padT + mainH)
+  ctx.lineTo(xOf(0), padT + mainH)
+  ctx.closePath()
+  ctx.fillStyle = grad
+  ctx.fill()
+
+  // 对比线 (橙色虚线, 净值线之下)
+  if (benchOn.value && bp.length) {
+    ctx.save()
+    ctx.strokeStyle = BENCH_COLOR; ctx.lineWidth = 1.5; ctx.setLineDash([5, 3])
+    ctx.beginPath()
+    let started = false
+    for (let i = 0; i < data.length; i++) {
+      const v = benchVals[i]
+      if (v == null) { started = false; continue }
+      const x = xOf(i), y = yOf(v)
+      if (!started) { ctx.moveTo(x, y); started = true } else ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  // 净值走势线 (蓝, 2px)
+  ctx.strokeStyle = '#4f8eff'; ctx.lineWidth = 2
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(xOf(0), yOf(data[0].close))
+  for (let i = 1; i < data.length; i++) ctx.lineTo(xOf(i), yOf(data[i].close))
+  ctx.stroke()
+
+  // 最新净值点 + 右侧标签
+  const lastIdx = data.length - 1
+  const lastY = yOf(data[lastIdx].close)
+  const up = data[lastIdx].close >= data[0].close
+  ctx.fillStyle = '#4f8eff'
+  ctx.beginPath(); ctx.arc(xOf(lastIdx), lastY, 3, 0, Math.PI * 2); ctx.fill()
+  ctx.fillStyle = up ? UP : DOWN
+  ctx.fillRect(padL + plotW, lastY - 7, padR - 2, 14)
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'left'
+  ctx.fillText(fmtPrice(data[lastIdx].close), padL + plotW + 4, lastY)
+
+  // 日期轴 3 刻度
+  ctx.fillStyle = AXIS; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
+  const labels: Array<[number, string]> = [
+    [padL + 14, data[0].date.slice(5)],
+    [padL + plotW / 2, data[Math.floor(lastIdx / 2)].date.slice(5)],
+    [padL + plotW - 14, data[lastIdx].date.slice(5)]
+  ]
+  for (const [x, t] of labels) ctx.fillText(t, x, cssH - 4)
+
+  // 悬停: 竖线 + 点 + 面板 (净值/日期/区间涨幅/对比)
+  if (hover.value != null) {
+    const i = Math.min(hover.value, lastIdx)
+    const b = data[i]
+    const cx = xOf(i)
+    ctx.save(); ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(120,120,120,0.5)'
+    ctx.beginPath(); ctx.moveTo(cx, padT); ctx.lineTo(cx, padT + mainH); ctx.stroke()
+    const cy = yOf(b.close)
+    ctx.fillStyle = '#4f8eff'
+    ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, Math.PI * 2); ctx.fill()
+    ctx.restore()
+    // 时间气泡
+    ctx.font = '10px ui-sans-serif, system-ui'
+    const label = b.date
+    const tw = ctx.measureText(label).width + 8
+    ctx.fillStyle = 'rgba(60,60,60,0.9)'
+    ctx.fillRect(Math.min(Math.max(cx - tw / 2, padL), padL + plotW - tw), cssH - 14, tw, 12)
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'
+    ctx.fillText(label, Math.min(Math.max(cx, padL + tw / 2), padL + plotW - tw / 2), cssH - 4)
+    // 信息面板
+    const chg = i > 0 ? ((b.close - data[0].close) / data[0].close) * 100 : 0
+    const bv = benchVals[i]
+    const bTxt = benchOn.value && bv != null ? '  沪深300 ' + ((bv - baseNav) / baseNav * 100).toFixed(2) + '%' : ''
+    const lines = [
+      `${b.date}  净值 ${b.close.toFixed(4)}`,
+      `期间 ${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%${bTxt}`
+    ]
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top'
+    let ly = padT + 2
+    for (const ln of lines) {
+      const w = ctx.measureText(ln).width + 10
+      ctx.fillStyle = 'rgba(30,30,30,0.82)'
+      ctx.fillRect(padL + 2, ly, w, 14)
+      ctx.fillStyle = '#eee'
       ctx.fillText(ln, padL + 7, ly + 1)
       ly += 15
     }
