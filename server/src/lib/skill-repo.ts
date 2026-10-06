@@ -100,21 +100,19 @@ export function listSkillFiles(): string[] {
   return out.sort()
 }
 
-/** git log --follow 单文件迭代历史 (失败返回空) */
+/** git log --follow 单文件迭代历史 (失败返回空)。用 \x00 前缀分隔记录, 规避 --name-status 输出与 header 的错位 */
 export async function fileHistory(rel: string, limit = 100): Promise<SkillCommit[]> {
   try {
     const { stdout } = await execFileAsync(
       'git',
-      ['-C', REPO_DIR, 'log', '--follow', '--name-status', '--pretty=format:%h%x1f%ci%x1f%an%x1f%s%x1e', `-${limit}`, '--', `skills/${rel}`]
+      ['-C', REPO_DIR, 'log', '--follow', '--name-status', '--pretty=format:%x00%h%x1f%ci%x1f%an%x1f%s', `-${limit}`, '--', `skills/${rel}`]
     )
     const out: SkillCommit[] = []
-    for (const seg of stdout.split('\u001e')) {
-      const trimmed = seg.replace(/^\n/, '')
-      if (!trimmed.trim()) continue
-      const nl = trimmed.indexOf('\n')
-      const headPart = (nl === -1 ? trimmed : trimmed.slice(0, nl)).split('\u001f')
-      const statusPart = nl === -1 ? '' : trimmed.slice(nl + 1).trim()
-      const status = statusPart.split('\t')[0] || 'M'
+    for (const seg of stdout.split('\u0000')) {
+      if (!seg.trim()) continue
+      const nl = seg.indexOf('\n')
+      const headPart = (nl === -1 ? seg : seg.slice(0, nl)).split('\u001f')
+      const status = nl === -1 ? 'M' : (seg.slice(nl + 1).trim().split('\t')[0] || 'M')
       out.push({
         hash: headPart[0] || '',
         date: headPart[1] || '',
@@ -165,20 +163,19 @@ export function listSkills(): SkillMeta[] {
   return out
 }
 
-/** 仓库全部 skills 路径的 git 迭代总时间线 (跨分支, 最近 limit 条) */
+/** 仓库全部 skills 路径的 git 迭代总时间线 (跨分支, 最近 limit 条)。用 \x00 前缀分隔记录 */
 export async function globalHistory(limit = 100): Promise<Array<{ hash: string; date: string; author: string; subject: string; files: string[] }>> {
   try {
     const { stdout } = await execFileAsync(
       'git',
-      ['-C', REPO_DIR, 'log', '--name-only', '--pretty=format:%h%x1f%ci%x1f%an%x1f%s%x1e', `-${limit}`, '--', 'skills/']
+      ['-C', REPO_DIR, 'log', '--name-only', '--pretty=format:%x00%h%x1f%ci%x1f%an%x1f%s', `-${limit}`, '--', 'skills/']
     )
     const out: Array<{ hash: string; date: string; author: string; subject: string; files: string[] }> = []
-    for (const seg of stdout.split('\u001e')) {
-      const trimmed = seg.replace(/^\n/, '')
-      if (!trimmed.trim()) continue
-      const nl = trimmed.indexOf('\n')
-      const headPart = (nl === -1 ? trimmed : trimmed.slice(0, nl)).split('\u001f')
-      const files = nl === -1 ? [] : trimmed.slice(nl + 1).split('\n').map(s => s.trim()).filter(Boolean).map(s => s.replace(/^skills\//, ''))
+    for (const seg of stdout.split('\u0000')) {
+      if (!seg.trim()) continue
+      const nl = seg.indexOf('\n')
+      const headPart = (nl === -1 ? seg : seg.slice(0, nl)).split('\u001f')
+      const files = nl === -1 ? [] : seg.slice(nl + 1).split('\n').map(s => s.trim()).filter(Boolean).map(s => s.replace(/^skills\//, ''))
       out.push({ hash: headPart[0] || '', date: headPart[1] || '', author: headPart[2] || '', subject: headPart[3] || '', files })
     }
     return out.filter(c => c.hash)
