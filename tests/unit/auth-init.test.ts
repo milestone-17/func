@@ -47,12 +47,26 @@ describe('auth store init 加固', () => {
     expect(getMock).toHaveBeenCalledTimes(1)
   })
 
-  it('持续网络异常 → 重试 3 次后放弃', async () => {
+  it('持续网络异常 → 重试 3 次后放弃, 且 initialized 复位 (守卫放行)', async () => {
     getMock.mockRejectedValue(err(0))
     const auth = useAuthStore()
     await auth.init()
     expect(auth.isLoggedIn).toBe(false)
     expect(getMock).toHaveBeenCalledTimes(3)
+    // 关键: 探活失败不算"确认未登录", 复位 initialized 让路由守卫放行, 由页面级 401 兜底
+    expect(auth.initialized).toBe(false)
+  })
+
+  it('init 失败复位 initialized 后可再次探活 (守卫二次 init 恢复登录)', async () => {
+    getMock.mockRejectedValueOnce(err(0)).mockRejectedValueOnce(err(0)).mockRejectedValueOnce(err(0)).mockResolvedValueOnce({ user: { id: 'u1', email: 'a@b.c', provider: 'guest' } })
+    const auth = useAuthStore()
+    await auth.init()
+    expect(auth.isLoggedIn).toBe(false)
+    expect(auth.initialized).toBe(false)
+    // 用户已进入目标页: 守卫再次触发 init, 此时网络恢复
+    await auth.init()
+    expect(auth.isLoggedIn).toBe(true)
+    expect(getMock).toHaveBeenCalledTimes(4)
   })
 
   it('init 幂等: 并发/重复调用只发一次请求', async () => {

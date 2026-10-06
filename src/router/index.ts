@@ -28,6 +28,10 @@ router.beforeEach(async (to) => {
     if (auth.isLoggedIn && to.name === 'login') return { path: '/' }
     return true
   }
+  if (!auth.isLoggedIn && !auth.initialized) {
+    // 探活尚未完成 (网络瞬断): 先放行, 页面数据请求若真 401 会由 api 层踢登录
+    return true
+  }
   if (!auth.isLoggedIn) {
     return { name: 'login', query: to.fullPath === '/' ? {} : { redirect: to.fullPath } }
   }

@@ -24,6 +24,8 @@ export const useAuthStore = defineStore('auth', () => {
           await new Promise(res => setTimeout(res, 800 * (attempt + 1)))
           continue
         }
+        // 重试仍失败: 不置 initialized, 让守卫放行目标页, 由页面数据请求的 401 兜底
+        initialized.value = false
         user.value = null
       }
     }
