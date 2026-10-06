@@ -121,7 +121,17 @@ async function getWeeklyBars(symbol: string): Promise<Array<{ date: string; clos
     const d = r.data as { date: string; close: number }
     return { date: d.date, close: d.close }
   })
-  // 2) 无库数据的美股: Yahoo 日K → 腾讯兜底 (复用 proxy 内实现需导出, 这里内联简化: 仅 Yahoo 失败抛错)
+  // 2) 6 位数字代码: A股场内 (东财日K → 腾讯日K) → 场外基金 (天天基金净值历史)
+  if (daily.length < 130 && /^\d{6}$/.test(symbol)) {
+    daily = await fetchEmDailyCn(symbol).catch(() => [])
+    if (daily.length < 130) daily = await fetchTxDailyCn(symbol).catch(() => [])
+    if (daily.length < 130) {
+      // 场外基金: 净值序列当收盘价聚合周线
+      const navs = await getCachedFundHistory(symbol, 500).catch(() => [])
+      daily = navs.map(b => ({ date: b.date, close: b.nav }))
+    }
+  }
+  // 3) 无库数据的美股: Yahoo 日K → 腾讯兜底
   if (daily.length < 130) {
     const { fetchYahooChart, fetchTencentUsDaily } = await import('../routes/proxy')
     daily = await fetchYahooChart(symbol, '2y', '1d').catch(() => fetchTencentUsDaily(symbol))
@@ -130,6 +140,47 @@ async function getWeeklyBars(symbol: string): Promise<Array<{ date: string; clos
   const bars = aggregateWeekly(daily)
   weeklyCache.set(symbol, { expiresAt: Date.now() + 6 * 3600_000, bars })
   return bars
+}
+
+/** 东财 A股/ETF 日K (secid: 沪 6/5 开头, 深 0/1/3 开头) */
+async function fetchEmDailyCn(code: string): Promise<Array<{ date: string; close: number }>> {
+  const market = /^[56]/.test(code) ? '1' : '0'
+  const secid = `${market}.${code}`
+  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&klt=101&fqt=1&lmt=500&end=20500101&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f53&ut=fa5fd1943c7b386f172d6893dbfba10b`
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (func-server)' } })
+  if (!res.ok) throw new Error(`东财日K HTTP ${res.status}`)
+  const json = (await res.json()) as { data?: { klines?: string[] } }
+  const out: Array<{ date: string; close: number }> = []
+  for (const k of json?.data?.klines || []) {
+    const p = k.split(',')
+    const date = (p[0] || '').trim()
+    const close = Number(p[1])
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(close) || close <= 0) continue
+    out.push({ date, close })
+  }
+  if (!out.length) throw new Error('东财日K解析为空')
+  return out
+}
+
+/** 腾讯 A股/ETF 日K兜底 (sh600519 / sz000001) */
+async function fetchTxDailyCn(code: string): Promise<Array<{ date: string; close: number }>> {
+  const tx = /^[56]/.test(code) ? `sh${code}` : `sz${code}`
+  const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tx},day,,,660,qfq`
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (func-server)' } })
+  if (!res.ok) throw new Error(`腾讯日K HTTP ${res.status}`)
+  const json = (await res.json()) as { data?: Record<string, { qfqday?: unknown[][]; day?: unknown[][] }> }
+  const node = json?.data?.[tx]
+  const rows = node?.qfqday || node?.day || []
+  const out: Array<{ date: string; close: number }> = []
+  for (const r of rows as unknown[][]) {
+    if (!Array.isArray(r) || r.length < 3) continue
+    const date = String(r[0] || '')
+    const close = Number(r[2])
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(close) || close <= 0) continue
+    out.push({ date, close })
+  }
+  if (!out.length) throw new Error('腾讯日K解析为空')
+  return out
 }
 
 /** 日K → 周K (ISO 周分组, 取每周最后交易日收盘) */
