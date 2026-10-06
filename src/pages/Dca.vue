@@ -485,8 +485,12 @@ function manualSet() {
 async function confirmExec(w: 1 | 2 | 3 | 4) {
   const sug = dca.suggestions[w]
   if (!sug) return
-  await dca.recordExecution(w, sug.suggestedAmount)
-  alert(`已记录第 ${w} 周执行 ¥${(sug.suggestedAmount / 100).toFixed(2)}`)
+  try {
+    await dca.recordExecution(w, sug.suggestedAmount)
+    alert(`已记录第 ${w} 周执行 ¥${(sug.suggestedAmount / 100).toFixed(2)}`)
+  } catch (e) {
+    alert(`执行失败: ${(e as Error).message}`)
+  }
 }
 async function skipExec(w: 1 | 2 | 3 | 4) { await dca.recordExecution(w, 0) }
 

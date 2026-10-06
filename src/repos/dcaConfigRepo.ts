@@ -1,8 +1,15 @@
 import { api } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth'
 import type { DCAConfig } from '@/types/dca'
 
 function normSymbol(s: string): string {
   return (s || '').replace(/^\^/, '').toUpperCase()
+}
+
+/** 每用户隔离的配置 id: 全局 symbol id 会被其他用户占用导致 409 */
+function scopedId(symbol: string): string {
+  const auth = useAuthStore()
+  return `${auth.user?.id ?? 'anon'}_${normSymbol(symbol)}`
 }
 
 async function listAll(): Promise<DCAConfig[]> {
@@ -41,14 +48,15 @@ export const dcaConfigRepo = {
   },
   /** 按 symbol 保存定投配置 (id = symbol) */
   async saveBySymbol(symbol: string, cfg: Omit<DCAConfig, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>): Promise<DCAConfig> {
+    const id = scopedId(symbol)
     const existingResp = await api
-      .get<{ item: DCAConfig }>(`/api/dcaConfigs/${encodeURIComponent(symbol)}`)
+      .get<{ item: DCAConfig }>(`/api/dcaConfigs/${encodeURIComponent(id)}`)
       .catch(() => undefined)
     const existing = existingResp?.item
     const now = Date.now()
     const out: DCAConfig = existing
       ? { ...existing, ...cfg, symbol, updatedAt: now }
-      : ({ id: symbol, ...cfg, symbol, createdAt: now, updatedAt: now, deletedAt: null } as unknown as DCAConfig)
+      : ({ id, ...cfg, symbol, createdAt: now, updatedAt: now, deletedAt: null } as unknown as DCAConfig)
     const r = await api.post<{ item: DCAConfig }>('/api/dcaConfigs', out)
     return r.item
   }
