@@ -7,12 +7,12 @@
  * - 判定基准 = 序列最新有效值; last >= MA 记 "线上", < MA 记 "线下"
  *
  * 数据路由 (与 fetchHoldingPrices 同哲学):
- * - 6 位数字 (场外基金): 东财 pingzhongdata 全量日频净值 → 重采样
+ * - 6 位数字: 服务端 /api/market/weekly 多源聚合 (场内东财/腾讯日K + 场外基金净值历史)
  * - 字母代码 (美股/ETF): Yahoo 周线 K 线 (已是周收盘, 不再重采样)
  * - 其余 (如港股): 暂不支持, 不发请求
  */
 import { computeMA } from '@/lib/ma'
-import { fetchFundNavTrend } from '@/lib/fundQuote'
+import { api } from '@/lib/api'
 import { fetchWeeklyBars } from '@/lib/yahoo'
 
 /** 周线周期 (周数) */
@@ -105,14 +105,14 @@ export async function fetchWeekMaRow(holding: { id: string; symbol: string; name
     statuses: weekMaStatuses([]).statuses, error
   })
 
-  // 6 位数字: 场外基金全量日频净值 → 重采样
+  // 6 位数字: 服务端 /api/market/weekly 多源聚合 (场内东财/腾讯日K + 场外基金净值历史)
   if (/^\d{6}$/.test(holding.symbol)) {
     try {
-      const pts = await fetchFundNavTrend(holding.symbol)
-      if (pts.length === 0) return fail('拉取失败')
-      const weekly = resampleWeekly(pts.map(p => ({ date: p.date, value: p.nav })))
-      const { statuses, weekCount } = weekMaStatuses(weekly.map(w => w.close))
-      return { ...base, lastValue: pts[pts.length - 1].nav, weekCount, statuses }
+      const r = await api.get<{ bars: Array<{ date: string; close: number }> }>(`/api/market/weekly?symbol=${encodeURIComponent(holding.symbol)}`)
+      const bars = r.bars || []
+      if (bars.length === 0) return fail('拉取失败')
+      const { statuses, weekCount } = weekMaStatuses(bars.map(b => b.close))
+      return { ...base, lastValue: bars[bars.length - 1].close, weekCount, statuses }
     } catch {
       return fail('拉取失败')
     }
