@@ -159,3 +159,48 @@ describe('GET /api/notifications/logs', () => {
     expect(logs.every((l: { userId: string }) => l.userId === me!.id)).toBe(true)
   })
 })
+
+
+// ---------------------------------------------------------------- 注册默认通知
+
+describe('邮箱注册默认通知配置', () => {
+  it('邮箱注册后 GET config → enabled=true, notifyEmail=注册邮箱, daily 08:30', async () => {
+    const email = 'newreg@test.com'
+    await prisma.emailCode.create({
+      data: { email, purpose: 'register', codeHash: require('node:crypto').createHash('sha256').update(`${email}::123456`).digest('hex'), expiresAt: new Date(Date.now() + 600000) }
+    })
+    const reg = await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password: 'password123', code: '123456' } })
+    expect(reg.statusCode).toBe(200)
+    const cookie = reg.cookies.map(c => `${c.name}=${c.value}`).join('; ')
+    const res = await app.inject({ method: 'GET', url: '/api/notifications/config', headers: { cookie } })
+    expect(res.statusCode).toBe(200)
+    const c = res.json().config
+    expect(c.enabled).toBe(true)
+    expect(c.notifyEmail).toBe(email)
+    expect(c.frequency).toBe('daily')
+    expect(c.time).toBe('08:30')
+    // 清理
+    const u = await prisma.user.findUnique({ where: { email } })
+    if (u) {
+      await prisma.notificationConfig.deleteMany({ where: { userId: u.id } })
+      await prisma.notificationLog.deleteMany({ where: { userId: u.id } })
+      await prisma.emailCode.deleteMany({ where: { email } })
+      await prisma.user.delete({ where: { id: u.id } })
+    }
+  })
+
+  it('guest 注册不创建通知配置 → GET config 走默认 enabled=false', async () => {
+    const g = await app.inject({ method: 'POST', url: '/api/auth/guest' })
+    expect(g.statusCode).toBe(200)
+    const cookie = g.cookies.map(c => `${c.name}=${c.value}`).join('; ')
+    const res = await app.inject({ method: 'GET', url: '/api/notifications/config', headers: { cookie } })
+    expect(res.statusCode).toBe(200)
+    const c = res.json().config
+    expect(c.enabled).toBe(false)
+    // 清理
+    const gid = g.json().user.id
+    await prisma.notificationConfig.deleteMany({ where: { userId: gid } })
+    await prisma.notificationLog.deleteMany({ where: { userId: gid } })
+    await prisma.user.deleteMany({ where: { id: gid } })
+  })
+})

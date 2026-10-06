@@ -60,3 +60,38 @@ export function dismissPermanently(ls: Pick<Storage, 'setItem'> = globalThis.loc
     ls?.setItem(DISMISS_PERMANENT_KEY, '1')
   } catch { /* ignore */ }
 }
+
+
+// ---------------------------------------------------------------- 首次登录欢迎提示
+
+export const WELCOME_SEEN_KEY = 'notify-welcome-seen'
+
+/**
+ * 邮箱注册用户是否显示"已开启每日通知"欢迎条:
+ *   - 仅 provider=email 且有真实邮箱 (非 @guest.local)
+ *   - 未看过 (localStorage 无 WELCOME_SEEN_KEY)
+ * guest/github 等其他登录走原 needsEmailPrompt 横幅, 不显示欢迎条
+ */
+export function shouldShowWelcome(args: {
+  user: PromptUserLike | null | undefined
+  localStorage?: Pick<Storage, 'getItem'>
+}): boolean {
+  const { user } = args
+  if (!user) return false
+  if (user.provider !== 'email') return false
+  const email = (user.email || '').trim()
+  if (!email || /@guest\.local$/i.test(email)) return false
+  const ls = args.localStorage ?? globalThis.localStorage
+  try {
+    return ls?.getItem(WELCOME_SEEN_KEY) !== '1'
+  } catch {
+    return true // 存储不可用 → 显示一次
+  }
+}
+
+/** 标记欢迎条已看过 (永久) */
+export function markWelcomeSeen(ls: Pick<Storage, 'setItem'> = globalThis.localStorage): void {
+  try {
+    ls?.setItem(WELCOME_SEEN_KEY, '1')
+  } catch { /* ignore */ }
+}

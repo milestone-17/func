@@ -66,6 +66,10 @@ export async function authRoutes(app: FastifyInstance, env: Env): Promise<void> 
     const user = await prisma.user.create({
       data: { email: norm, passwordHash, provider: 'email', emailVerified: true, role: resolveRole(env, norm) }
     })
+    // 邮箱注册默认开启每日通知 (每日 08:30, 发往注册邮箱; 用户可在设置中修改/关闭)
+    await prisma.notificationConfig.create({
+      data: { userId: user.id, data: { enabled: true, notifyEmail: norm, frequency: 'daily', dayOfWeek: 1, time: '08:30' } }
+    }).catch(() => { /* 已存在则忽略 */ })
     setTokenCookie(app, reply, user.id)
     return { user: { id: user.id, email: user.email, role: user.role } }
   })
