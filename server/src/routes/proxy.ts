@@ -54,6 +54,31 @@ async function fetchFundQuotesFromEm(codes: string[]): Promise<FundQuoteRow[]> {
   return rows
 }
 
+/** 腾讯股票/ETF 实时行情兜底 (FundMNFInfo 不覆盖场内股票) */
+async function fetchTxSpotQuotes(codes: string[]): Promise<FundQuoteRow[]> {
+  const list = codes.map(c => (/^[56]/.test(c) ? `sh${c}` : `sz${c}`)).join(',')
+  const url = `https://qt.gtimg.cn/q=${list}`
+  const res = await fetch(url, { headers: UA })
+  if (!res.ok) throw new Error(`腾讯行情 HTTP ${res.status}`)
+  const text = await res.text()
+  const rows: FundQuoteRow[] = []
+  for (const line of text.split(';')) {
+    const m = line.match(/v_(?:sh|sz)(\d{6})="([^"]+)"/)
+    if (!m) continue
+    const code = m[1]
+    const parts = m[2].split('~')
+    if (parts.length < 4) continue
+    const name = (parts[1] || '').trim()
+    const price = Number(parts[3])
+    const dateStr = (parts[30] || '').trim() // YYYYMMDD
+    const navDate = /^\d{8}$/.test(dateStr) ? `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}` : ''
+    if (Number.isFinite(price) && price > 0) {
+      rows.push({ code, name, nav: price, isEstimate: false, navDate, source: 'tencent-spot' })
+    }
+  }
+  return rows
+}
+
 interface MonthlyBarDto { date: string; open: number; close: number; high: number; low: number }
 
 /** 东财 secid → 腾讯代码映射 (A 股指数) */
@@ -170,7 +195,14 @@ export async function proxyRoutes(app: FastifyInstance): Promise<void> {
     const list = (codes || '').split(',').map(c => c.trim()).filter(c => /^\d{6}$/.test(c)).slice(0, 50)
     if (!list.length) return reply.code(400).send({ error: 'codes 参数不合法' })
     try {
-      const rows = await cached(`fund:${list.join(',')}`, 60_000, () => fetchFundQuotesFromEm(list))
+      let rows = await cached(`fund:${list.join(',')}`, 60_000, () => fetchFundQuotesFromEm(list))
+      // 东财 FundMNFInfo 不含场内股票 → 缺失代码用腾讯实时行情补齐
+      const got = new Set(rows.map(r => r.code))
+      const missing = list.filter(c => !got.has(c))
+      if (missing.length) {
+        const extra = await fetchTxSpotQuotes(missing).catch(() => [])
+        rows = [...rows, ...extra]
+      }
       return { items: rows }
     } catch (e) {
       return reply.code(502).send({ error: `净值拉取失败: ${(e as Error).message}` })
