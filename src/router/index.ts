@@ -7,6 +7,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/ledger', name: 'ledger', component: () => import('@/pages/Ledger.vue') },
   { path: '/budget', name: 'budget', component: () => import('@/pages/Budget.vue') },
   { path: '/portfolio', name: 'portfolio', component: () => import('@/pages/Portfolio.vue') },
+  { path: '/watch', name: 'watch', component: () => import('@/pages/Watch.vue') },
   { path: '/holding/:id', name: 'holding-detail', component: () => import('@/pages/HoldingDetail.vue') },
   { path: '/permanent', name: 'permanent', component: () => import('@/pages/Permanent.vue') },
   { path: '/dca', name: 'dca', component: () => import('@/pages/Dca.vue') },
