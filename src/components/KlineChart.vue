@@ -13,7 +13,7 @@
           :class="['rounded-md px-1.5 py-0.5 text-[11px] transition', fq === f.v ? 'bg-surface2 text-ink font-medium' : 'text-ink3 hover:text-ink']">
           {{ f.label }}
         </button>
-        <button v-if="view !== 'trends' && kind === 'ohlc'" @click="showBench = !showBench" title="叠加沪深300对比"
+        <button v-if="view === 'day' && kind === 'ohlc'" @click="showBench = !showBench" title="叠加沪深300对比"
           :class="['rounded-md px-1.5 py-0.5 text-[11px] transition', showBench ? 'bg-surface2 text-ink font-medium' : 'text-ink3 hover:text-ink']">
           对比沪深300
         </button>
@@ -56,6 +56,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount, computed } from 'vue'
 import { api } from '@/lib/api'
+import { alignBenchPct, benchWindowChange } from '@/lib/klineBench'
 
 export interface KlineBar { date: string; open: number; high: number; low: number; close: number; volume: number }
 export interface TrendPoint { time: string; price: number; avg: number; volume: number }
@@ -249,17 +250,16 @@ const maRows = computed(() => {
   const idx = hover.value != null ? hover.value : visible.value.length - 1
   return MA_PERIODS.map(p => ({ p, v: maOf(idx, p) }))
 })
-const benchChg = computed(() => {
-  // 对比基准: 可见区间内涨跌幅 (末根 vs 首根收盘)
+/** 基准归一化百分比序列 (窗口内, 与蜡烛逐根对齐) */
+const benchPcts = computed(() => {
   const b = benchBars.value
-  if (!benchOn.value || b.length < 2) return 0
+  if (!b.length) return []
   const n = allBars.value.length
-  const start = winStart.value
-  const first = b[Math.max(0, b.length - (n - start) - 1 + 0)] || b[0]
-  const last = b[b.length - 1]
-  if (!first || !last) return 0
-  return ((last.close - first.close) / first.close) * 100
+  const size = winSize.value || Math.min(rangeCount.value, n)
+  const start = Math.max(0, Math.min(winStart.value, n - size))
+  return alignBenchPct(allBars.value, b, start, size)
 })
+const benchChg = computed(() => benchWindowChange(benchPcts.value))
 
 function fmtVol(v: number): string {
   if (v >= 1e8) return (v / 1e8).toFixed(2) + '亿'
@@ -306,6 +306,16 @@ function draw(): void {
     for (let i = 0; i < data.length; i++)
       for (const p of MA_PERIODS) { const v = maOf(i, p); if (v != null) { if (v < lo) lo = v; if (v > hi) hi = v } }
   }
+  // 对比基准归一化后纳入价格范围, 否则线可能画出可视区 (无视觉效果的主因)
+  const bp = benchOn.value ? benchPcts.value : []
+  if (bp.length) {
+    for (const p of bp) {
+      if (p == null) continue
+      const v = data[0].close * (1 + p)
+      if (v < lo) lo = v
+      if (v > hi) hi = v
+    }
+  }
   const yOf = (v: number) => mainT + ((hi - v) / (hi - lo)) * mainH
 
   // 网格 + 价格轴
@@ -331,28 +341,6 @@ function draw(): void {
   ctx.fillStyle = '#fff'; ctx.textAlign = 'left'
   ctx.fillText(fmtPrice(lastBar.close), padL + plotW + 4, lastY)
 
-  // 基准对比线 (归一化叠加): 把沪深300收盘按 (1 + pct) 映射到首根收盘
-  if (benchOn.value && view.value === 'day') {
-    const n = allBars.value.length
-    const start = winStart.value
-    const b = benchBars.value
-    const baseClose = data[0].close
-    const bBaseIdx = b.length - (n - start) // bench 对应窗口首根的索引
-    ctx.strokeStyle = BENCH_COLOR; ctx.lineWidth = 1; ctx.setLineDash([])
-    ctx.beginPath()
-    let started = false
-    for (let i = 0; i < data.length; i++) {
-      const bi = bBaseIdx + i
-      if (bi < 0 || bi >= b.length) { started = false; continue }
-      const pct = (b[bi].close - b[Math.max(0, bBaseIdx)].close) / b[Math.max(0, bBaseIdx)].close
-      const v = baseClose * (1 + pct)
-      const x = padL + i * step + step / 2
-      const y = yOf(v)
-      if (!started) { ctx.moveTo(x, y); started = true } else ctx.lineTo(x, y)
-    }
-    ctx.stroke()
-  }
-
   // 蜡烛
   data.forEach((b, i) => {
     const x = padL + i * step + step / 2
@@ -363,6 +351,24 @@ function draw(): void {
     const yO = yOf(b.open), yC = yOf(b.close)
     ctx.fillRect(x - bodyW / 2, Math.min(yO, yC), bodyW, Math.max(1, Math.abs(yC - yO)))
   })
+
+  // 基准对比线: 蜡烛之上加粗绘制 (归一化对齐首根收盘)
+  if (benchOn.value && bp.length) {
+    ctx.save()
+    ctx.strokeStyle = BENCH_COLOR; ctx.lineWidth = 2.5; ctx.setLineDash([])
+    ctx.beginPath()
+    let started = false
+    for (let i = 0; i < data.length; i++) {
+      const p = bp[i]
+      if (p == null) { started = false; continue }
+      const v = data[0].close * (1 + p)
+      const x = padL + i * step + step / 2
+      const y = yOf(v)
+      if (!started) { ctx.moveTo(x, y); started = true } else ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+    ctx.restore()
+  }
 
   // MA 均线
   if (!isNav) {
@@ -578,4 +584,5 @@ watch(view, () => load())
 watch(fq, () => load())
 watch(range, () => { resetWindow(); hover.value = null; draw() })
 watch(showBench, async () => { if (showBench.value && view.value === 'day' && !benchBars.value.length) await loadBench(); draw() })
+watch(view, v => { if (v !== 'day' && showBench.value) showBench.value = false })
 </script>
