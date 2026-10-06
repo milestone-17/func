@@ -329,8 +329,20 @@ export const useDcaStore = defineStore('dca', () => {
       priceAtBuy: finalPrice,
       sharesBought: executedAmount / (finalPrice * 100)
     })
-    // 目标基金存在 → 生成 buy 交易 (金额按 executedAmount, 数量按 finalPrice)
+    // 同步账本: 定投买入 = 现金流出 (无论是否指定目标基金都要记账)
     const targetId = st.config.targetHoldingId
+    if (executedAmount > 0) {
+      const t = targetId ? await holdingRepo.get(targetId) : undefined
+      await syncInvestToLedger({
+        amountFen: executedAmount,
+        side: 'buy',
+        date: today,
+        note: t
+          ? `定投·W${weekIndex} ${holdingNote(t.name, t.symbol)}`
+          : `定投·W${weekIndex} ${st.config.symbol}`
+      })
+    }
+    // 目标基金存在 → 生成 buy 交易 (金额按 executedAmount, 数量按 finalPrice)
     if (targetId) {
       const target = await holdingRepo.get(targetId)
       if (target && executedAmount > 0 && finalPrice > 0) {
@@ -348,13 +360,6 @@ export const useDcaStore = defineStore('dca', () => {
             quantity: qty,
             fee: 0,
             note: `定投自动执行·W${weekIndex} ${st.config.symbol}`
-          })
-          // 同步账本: 定投买入 = 现金流出
-          await syncInvestToLedger({
-            amountFen: executedAmount,
-            side: 'buy',
-            date: today,
-            note: `定投·W${weekIndex} ${holdingNote(target.name, target.symbol)}`
           })
           const portfolio = usePortfolioStore()
           await portfolio.refresh()
