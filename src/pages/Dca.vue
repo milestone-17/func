@@ -187,8 +187,11 @@
               :bucket="dca.suggestions[w]?.bucket || dca.bucket || { label: '—', side: 'flat', rate: 1 }"
               :suggested="(dca.suggestions[w]?.suggestedAmount ?? dca.config.weeklySplits[w-1]) / 100"
               :exceeds="dca.suggestions[w]?.exceedsSplit ?? false"
+              :status="weekStatuses[w]"
+              :executed-amount="weekExecutedAmounts[w]"
               @confirm="confirmExec(w)"
               @skip="skipExec(w)"
+              @undo="undoExec(w)"
             />
           </div>
         </section>
@@ -270,6 +273,7 @@ import { usePortfolioStore } from '@/stores/portfolio'
 import { fundApi, type FundSearchItem } from '@/repos/fundRepo'
 import { fenToYuan, yuanToFen } from '@/lib/money'
 import { rollingMA } from '@/lib/ma'
+import { dcaExecutionRepo } from '@/repos/dcaExecutionRepo'
 
 const dca = useDcaStore()
 const portfolio = usePortfolioStore()
@@ -282,6 +286,7 @@ const autoExecMsg = ref('')
 
 onMounted(async () => {
   await dca.load()
+  void refreshWeekStatuses()
   if (!portfolio.loaded) await portfolio.refresh()
   // 详情页跳来 ?target=holdingId → 同步预选每日定投
   const targetId = String(route.query.target || '')
@@ -482,17 +487,49 @@ function manualSet() {
   showManual.value = false
 }
 
+/** 本月各周执行状态 (从执行记录加载, 操作后刷新) */
+const weekStatuses = ref<Record<1 | 2 | 3 | 4, 'none' | 'executed' | 'skipped'>>({ 1: 'none', 2: 'none', 3: 'none', 4: 'none' })
+const weekExecutedAmounts = ref<Record<1 | 2 | 3 | 4, number>>({ 1: 0, 2: 0, 3: 0, 4: 0 })
+
+function monthISO(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+async function refreshWeekStatuses(): Promise<void> {
+  const cfg = dca.config
+  if (!cfg) return
+  const list = await dcaExecutionRepo.listByMonth(monthISO())
+  for (const w of [1, 2, 3, 4] as const) {
+    const e = list.find(x => x.configId === cfg.id && x.weekIndex === w)
+    weekStatuses.value = { ...weekStatuses.value, [w]: e ? (e.executedAmount > 0 ? 'executed' : 'skipped') : 'none' }
+    weekExecutedAmounts.value = { ...weekExecutedAmounts.value, [w]: e ? e.executedAmount / 100 : 0 }
+  }
+}
+
 async function confirmExec(w: 1 | 2 | 3 | 4) {
   const sug = dca.suggestions[w]
   if (!sug) return
   try {
     await dca.recordExecution(w, sug.suggestedAmount)
-    alert(`已记录第 ${w} 周执行 ¥${(sug.suggestedAmount / 100).toFixed(2)}`)
+    await refreshWeekStatuses()
   } catch (e) {
     alert(`执行失败: ${(e as Error).message}`)
   }
 }
-async function skipExec(w: 1 | 2 | 3 | 4) { await dca.recordExecution(w, 0) }
+async function skipExec(w: 1 | 2 | 3 | 4) {
+  await dca.recordExecution(w, 0)
+  await refreshWeekStatuses()
+}
+/** 撤销: 删除该槽位当月执行记录 */
+async function undoExec(w: 1 | 2 | 3 | 4) {
+  const cfg = dca.config
+  if (!cfg) return
+  const e = (await dcaExecutionRepo.listByMonth(monthISO())).find(x => x.configId === cfg.id && x.weekIndex === w)
+  if (!e) return
+  await dcaExecutionRepo.put({ ...e, deletedAt: Date.now() })
+  await refreshWeekStatuses()
+}
 
 function fmtTime(iso: string) {
   try { return new Date(iso).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }
