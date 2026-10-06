@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify'
+import { requireAuth } from '../plugins/auth'
 import { prisma } from '../lib/prisma'
 import { fetchFundHistoryFromEm, searchFundsFromEm } from '../lib/fund-history'
 
@@ -50,6 +51,28 @@ export async function marketRoutes(app: FastifyInstance): Promise<void> {
       return { code, bars, latest: bars.length ? bars[bars.length - 1] : null }
     } catch (e) {
       return reply.code(502).send({ error: `净值历史获取失败: ${(e as Error).message}` })
+    }
+  })
+
+  // OHLC 日K (自选/持仓 K 线图用): 场内 6 位 → 东财日K全量OHLC → 腾讯兜底; 场外基金 → 净值历史降级单值蜡烛
+  app.get('/api/market/kline', { preHandler: requireAuth }, async (req, reply) => {
+    const { symbol } = (req.query || {}) as { symbol?: string }
+    if (!symbol || !/^\d{6}$/.test(symbol)) return reply.code(400).send({ error: 'symbol 参数不合法' })
+    const code = symbol
+    try {
+      const ohlc = await fetchEmOhlcCn(code).catch(() => [] as KlineBar[])
+      let bars = ohlc.length > 0 ? ohlc : await fetchTxOhlcCn(code).catch(() => [] as KlineBar[])
+      let kind: 'ohlc' | 'nav' = ohlc.length > 0 ? 'ohlc' : (bars.length > 0 ? 'ohlc' : 'nav')
+      if (bars.length === 0) {
+        // 场外基金: 无盘口价, 净值序列降级为单值蜡烛 (open=high=low=close=nav)
+        const navs = await getCachedFundHistory(code, 500).catch(() => [])
+        bars = navs.map(b => ({ date: b.date, open: b.nav, high: b.nav, low: b.nav, close: b.nav }))
+        kind = 'nav'
+      }
+      reply.header('cache-control', 'public, max-age=300')
+      return { symbol: code, kind, bars }
+    } catch (e) {
+      return reply.code(502).send({ error: `K线获取失败: ${(e as Error).message}` })
     }
   })
 
@@ -143,6 +166,52 @@ async function getWeeklyBars(symbol: string): Promise<Array<{ date: string; clos
 }
 
 /** 东财 A股/ETF 日K (secid: 沪 6/5 开头, 深 0/1/3 开头) */
+/** OHLC 日K 单根 */
+interface KlineBar { date: string; open: number; high: number; low: number; close: number }
+
+/** 东财日K全量 OHLC (push2his klt=101 fqt=1; fields2 f51日期 f52开 f53收 f54高 f55低) */
+async function fetchEmOhlcCn(code: string): Promise<KlineBar[]> {
+  const market = /^[56]/.test(code) ? '1' : '0'
+  const secid = `${market}.${code}`
+  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&klt=101&fqt=1&lmt=500&end=20500101&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55&ut=fa5fd1943c7b386f172d6893dbfba10b`
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (func-server)' } })
+  if (!res.ok) throw new Error(`东财OHLC HTTP ${res.status}`)
+  const json = (await res.json()) as { data?: { klines?: string[] } }
+  const out: KlineBar[] = []
+  for (const k of json?.data?.klines || []) {
+    const p = k.split(',')
+    const date = (p[0] || '').trim()
+    const open = Number(p[1]), close = Number(p[2]), high = Number(p[3]), low = Number(p[4])
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+    if (![open, close, high, low].every(v => Number.isFinite(v) && v > 0)) continue
+    out.push({ date, open, high, low, close })
+  }
+  if (!out.length) throw new Error('东财OHLC解析为空')
+  return out
+}
+
+/** 腾讯日K OHLC 兜底 (fqkline qfqday: r[0]日期 r[1]开 r[2]收 r[3]高 r[4]低) */
+async function fetchTxOhlcCn(code: string): Promise<KlineBar[]> {
+  const tx = /^[56]/.test(code) ? `sh${code}` : `sz${code}`
+  const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tx},day,,,660,qfq`
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (func-server)' } })
+  if (!res.ok) throw new Error(`腾讯OHLC HTTP ${res.status}`)
+  const json = (await res.json()) as { data?: Record<string, { qfqday?: unknown[][]; day?: unknown[][] }> }
+  const node = json?.data?.[tx]
+  const rows = node?.qfqday || node?.day || []
+  const out: KlineBar[] = []
+  for (const r of rows as unknown[][]) {
+    if (!Array.isArray(r) || r.length < 5) continue
+    const date = String(r[0] || '')
+    const open = Number(r[1]), close = Number(r[2]), high = Number(r[3]), low = Number(r[4])
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+    if (![open, close, high, low].every(v => Number.isFinite(v) && v > 0)) continue
+    out.push({ date, open, high, low, close })
+  }
+  if (!out.length) throw new Error('腾讯OHLC解析为空')
+  return out
+}
+
 async function fetchEmDailyCn(code: string): Promise<Array<{ date: string; close: number }>> {
   const market = /^[56]/.test(code) ? '1' : '0'
   const secid = `${market}.${code}`

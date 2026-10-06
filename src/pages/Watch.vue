@@ -50,7 +50,8 @@
         </div>
         <p class="mt-2 text-sm text-ink3">暂无自选,搜索上方关键词添加</p>
       </div>
-      <div v-for="r in rows" :key="r.code" class="card card-pad flex items-center justify-between gap-3">
+      <div v-for="r in rows" :key="r.code" class="card card-pad">
+        <div class="flex items-center justify-between gap-3 cursor-pointer" @click="toggleExpand(r.code)" title="点击查看K线">
         <div class="min-w-0">
           <div class="flex items-center gap-2">
             <span class="truncate text-sm font-medium">{{ r.name }}</span>
@@ -67,9 +68,13 @@
               {{ chgText(r) }}
             </div>
           </div>
-          <button @click="removeWatch(r.code)" class="btn-ghost !px-2 text-ink3 hover:text-neg" title="删除自选">
+          <button @click.stop="removeWatch(r.code)" class="btn-ghost !px-2 text-ink3 hover:text-neg" title="删除自选">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
+        </div>
+        </div>
+        <div v-if="expanded === r.code" class="mt-3 border-t border-line pt-2">
+          <KlineChart :symbol="r.code" :height="220" />
         </div>
       </div>
     </div>
@@ -79,6 +84,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import AppShell from '@/components/AppShell.vue'
+import KlineChart from '@/components/KlineChart.vue'
 import { api } from '@/lib/api'
 import { metaRepo } from '@/repos/metaRepo'
 
@@ -96,6 +102,10 @@ const quotes = ref<Map<string, QuoteRow>>(new Map())
 const quotesAt = ref<number | null>(null)
 const loadingQuotes = ref(false)
 
+const expanded = ref<string | null>(null)
+function toggleExpand(code: string): void {
+  expanded.value = expanded.value === code ? null : code
+}
 const keyword = ref('')
 const results = ref<{ code: string; name: string; type: string }[]>([])
 const searching = ref(false)

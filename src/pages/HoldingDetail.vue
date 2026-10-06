@@ -75,6 +75,15 @@
         </div>
       </section>
 
+      <!-- K 线图 (6 位代码: 场内 OHLC / 场外净值蜡烛) -->
+      <section v-if="view && view.symbol && /^\d{6}$/.test(view.symbol)" class="card card-pad">
+        <div class="flex items-center justify-between mb-2">
+          <span class="section-title">K 线图</span>
+          <span class="text-[11px] text-ink3">日K · 前复权</span>
+        </div>
+        <KlineChart :symbol="view.symbol" :height="240" />
+      </section>
+
       <!-- 净值走势 -->
       <section v-if="view && view.symbol && /^\d{6}$/.test(view.symbol)" class="card card-pad">
         <div class="flex items-center justify-between mb-2">
@@ -128,6 +137,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppShell from '@/components/AppShell.vue'
 import LineChart from '@/components/LineChart.vue'
+import KlineChart from '@/components/KlineChart.vue'
 import { usePortfolioStore } from '@/stores/portfolio'
 import { useSettingsStore } from '@/stores/settings'
 import { formatYuan, fenToYuan } from '@/lib/money'
