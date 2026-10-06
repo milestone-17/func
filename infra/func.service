@@ -1,0 +1,27 @@
+[Unit]
+Description=Func personal finance app (Fastify server + static frontend)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/workspace/func/server
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+# 日志走 journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=func-server
+
+# 轻量加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/workspace/func/server
+
+[Install]
+WantedBy=multi-user.target
