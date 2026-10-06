@@ -20,6 +20,7 @@
             @input="onInput"
             @keydown.enter.prevent="pickFirst"
             @focus="searching = true"
+            @blur="onBlur"
             placeholder="搜索基金名称或代码添加 (至少 2 字符)"
             class="input flex-1"
           />
@@ -210,6 +211,11 @@ async function doSearch(kw: string): Promise<void> {
     results.value = []
     searchErr.value = `搜索失败: ${(e as Error).message}`
   }
+}
+
+function onBlur(): void {
+  // 延迟关闭: 让下拉项的 click 先于 blur 生效
+  blurTimer = setTimeout(() => { searching.value = false; results.value = [] }, 150)
 }
 
 function pickFirst(): void {
