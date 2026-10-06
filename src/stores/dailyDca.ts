@@ -4,6 +4,7 @@ import { dailyDcaConfigRepo } from '@/repos/dailyDcaConfigRepo'
 import { holdingRepo } from '@/repos/holdingRepo'
 import { holdingTxnRepo } from '@/repos/holdingTxnRepo'
 import { usePortfolioStore } from '@/stores/portfolio'
+import { syncInvestToLedger, holdingNote } from '@/lib/ledger-sync'
 import { shouldExecuteToday, computeDailyBuy } from '@/lib/dailyDca'
 import type { DailyDcaConfig } from '@/types/dca'
 
@@ -60,6 +61,13 @@ export const useDailyDcaStore = defineStore('dailyDca', () => {
       return { executed: false, reason: r.reason }
     }
     await holdingTxnRepo.add(r.txn)
+    // 同步账本: 每日定投买入 = 现金流出
+    await syncInvestToLedger({
+      amountFen: r.txn.quantity * r.txn.price,
+      side: 'buy',
+      date: r.txn.date,
+      note: `每日定投 ${holdingNote(holding?.name, holding?.symbol ?? '')}`
+    })
     const amountFen = config.value.dailyAmountFen
     config.value = await dailyDcaConfigRepo.save({
       enabled: config.value.enabled,

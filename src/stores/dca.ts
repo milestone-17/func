@@ -13,6 +13,7 @@ import { computeWeekSuggestion, type SuggestionResult } from '@/lib/dca'
 import { lookupBucket } from '@/lib/table'
 import { weekOfMonth, monthOf } from '@/lib/dcaWeek'
 import { usePortfolioStore } from '@/stores/portfolio'
+import { syncInvestToLedger, holdingNote } from '@/lib/ledger-sync'
 import type { DCAConfig, IndexData, BucketResult } from '@/types/dca'
 
 /** 测试注入点: 通过 setTodayForTests 覆盖 todayISO 返回值 (避免 fake timers 破坏 IndexedDB) */
@@ -347,6 +348,13 @@ export const useDcaStore = defineStore('dca', () => {
             quantity: qty,
             fee: 0,
             note: `定投自动执行·W${weekIndex} ${st.config.symbol}`
+          })
+          // 同步账本: 定投买入 = 现金流出
+          await syncInvestToLedger({
+            amountFen: executedAmount,
+            side: 'buy',
+            date: today,
+            note: `定投·W${weekIndex} ${holdingNote(target.name, target.symbol)}`
           })
           const portfolio = usePortfolioStore()
           await portfolio.refresh()

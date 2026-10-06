@@ -9,6 +9,7 @@ import { inferCategory } from '@/lib/category'
 import { computePosition, settleDaysOf } from '@/lib/position'
 import { suggestSettleDays, isSettled } from '@/lib/settlement'
 import { planConversion, type ConvertPlan } from '@/lib/conversion'
+import { syncInvestToLedger, holdingNote } from '@/lib/ledger-sync'
 import { useSettingsStore } from '@/stores/settings'
 import type { Holding, HoldingTxn, Currency, Market, HoldingCategory } from '@/types/portfolio'
 
@@ -98,7 +99,8 @@ export const usePortfolioStore = defineStore('portfolio', () => {
         quantity, avgCost, settleDays,
         currentPrice: price, currentPriceIsEstimate: h.currentPriceIsEstimate ?? false,
         pendingBuyFen: pos.pendingBuyFen, pendingSellFen: pos.pendingSellFen, frozenShares: pos.frozenShares,
-        isClosed: quantity === 0 && txns.length > 0,
+        // 有确认中买入或在途卖出(冻结)时不算清仓
+                isClosed: quantity === 0 && pos.pendingBuyFen === 0 && pos.frozenShares === 0 && txns.length > 0,
         marketValueOriginal, marketValueCNY, totalCost, unrealized, unrealizedPct
       })
     }
@@ -267,6 +269,9 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       holdingId: tgt.id, side: 'buy', date: today, price: target.priceFen, quantity: plan.targetShares,
       fee: 0, note: `转换入←${src.symbol} ${tag}`.trim()
     })
+    // 同步账本: 转换 = 源卖出回流 + 目标买入流出
+    await syncInvestToLedger({ amountFen: plan.sourceShares * srcPrice, side: 'sell', date: today, note: `转换出 ${holdingNote(src.name, src.symbol)}` })
+    await syncInvestToLedger({ amountFen: plan.targetShares * target.priceFen, side: 'buy', date: today, note: `转换入 ${holdingNote(tgt.name, tgt.symbol)}` })
     await refresh()
     return { ok: true, plan, sourceHoldingId: sourceId, targetHoldingId: tgt.id, targetCreated }
   }
@@ -293,10 +298,18 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       if (!(input.value > 0)) return { ok: false, reason: 'invalid' }
       quantity = input.value
     }
+    const date = input.date ?? todayISO()
     await holdingTxnRepo.add({
       holdingId: id, side: 'buy',
-      date: input.date ?? todayISO(), price, quantity,
+      date, price, quantity,
       fee: input.feeFen ?? 0, note: input.mode === 'amount' ? '加仓(按金额)' : '加仓(按份额)'
+    })
+    // 同步账本: 买入 = 现金流出 (金额 + 费用)
+    await syncInvestToLedger({
+      amountFen: Math.round(quantity * price) + (input.feeFen ?? 0),
+      side: 'buy',
+      date,
+      note: `加仓 ${holdingNote(h.name, h.symbol)}`
     })
     await refresh()
     const settleDays = settleDaysOf(h)
@@ -335,10 +348,18 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     if (!(quantity > 0)) return { ok: false, reason: 'invalid' }
     if (quantity > held + 1e-9) return { ok: false, reason: 'exceeds-held' }
     quantity = Math.min(quantity, held)
+    const rDate = input.date ?? todayISO()
     await holdingTxnRepo.add({
       holdingId: id, side: 'sell',
-      date: input.date ?? todayISO(), price, quantity,
+      date: rDate, price, quantity,
       fee: input.feeFen ?? 0, note: input.mode === 'all' ? '全部卖出' : input.mode === 'amount' ? '减仓(按金额)' : '减仓(按份额)'
+    })
+    // 同步账本: 卖出 = 现金回流 (金额 - 费用)
+    await syncInvestToLedger({
+      amountFen: Math.max(0, Math.round(quantity * price) - (input.feeFen ?? 0)),
+      side: 'sell',
+      date: rDate,
+      note: `减仓 ${holdingNote(h.name, h.symbol)}`
     })
     await refresh()
     const pending = !isSettled(input.date ?? todayISO(), settleDays, todayISO())
