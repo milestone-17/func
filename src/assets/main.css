@@ -89,12 +89,13 @@
 
   /* ---- 弹出层容器 (底部抽屉) ---- */
   .sheet {
-    @apply fixed inset-0 z-50 bg-black/45 flex items-end justify-center;
+    @apply fixed inset-0 z-50 bg-black/45 flex items-end justify-center md:items-center;
     backdrop-filter: blur(2px);
   }
   .sheet-panel {
-    @apply w-full max-w-md bg-surface rounded-t-3xl px-5 pt-5 pb-8
-      shadow-float animate-[sheet-up_0.22s_cubic-bezier(.2,.8,.3,1)];
+    @apply w-full max-w-md bg-surface rounded-t-3xl md:rounded-3xl px-5 pt-5 pb-8
+      shadow-float animate-[sheet-up_0.22s_cubic-bezier(.2,.8,.3,1)]
+      max-h-[88vh] md:max-h-[82vh] overflow-y-auto;
   }
 }
 

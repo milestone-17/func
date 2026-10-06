@@ -191,7 +191,9 @@
           </div>
           <div>
             <label class="label">代码</label>
-            <input v-model="form.symbol" type="text" placeholder="如 QQQ / 600519" class="input" />
+            <input v-model="form.symbol" @blur="resolveSymbol" type="text" placeholder="如 QQQ / 600519" class="input" />
+            <div v-if="resolving" class="mt-1 text-[11px] text-ink3">正在识别代码信息…</div>
+            <div v-else-if="resolveMsg" :class="['mt-1 text-[11px]', resolveOk ? 'text-pos' : 'text-warn']">{{ resolveMsg }}</div>
           </div>
           <div>
             <label class="label">名称</label>
@@ -455,6 +457,9 @@ async function retryWeekMa(h: HoldingView) {
 }
 
 const creating = ref(false)
+watch(() => form.value.market, (m) => {
+  form.value.currency = m === 'US' ? 'USD' : 'CNY'
+})
 const form = ref<{ symbol: string; name: string; market: Market; type: HoldingType; category: HoldingCategory; currency: Currency; avgCost: number | null; quantity: number }>({
   symbol: '', name: '', market: 'US', type: 'etf', category: 'other', currency: 'USD', avgCost: null, quantity: 0
 })
@@ -478,10 +483,71 @@ watch(() => [form.value.name, form.value.symbol], () => {
     applyCategoryTypeDefault()
   }
 })
+watch(() => form.value.symbol, (sym) => {
+  if (creating.value && sym && /^\d{6}$/.test(sym.trim())) resolveSymbolDebounced()
+})
+
+/** 代码解析: 输入代码后失焦/防抖自动查名称并填充 (基金/股票通用) */
+const resolving = ref(false)
+const resolveMsg = ref('')
+const resolveOk = ref(false)
+let resolveTimer: ReturnType<typeof setTimeout> | null = null
+let lastResolvedKey = ''
+
+/** 6 位纯数字 → A股/基金 (CN), 其他 → 美股 (US) */
+function guessMarketBySymbol(sym: string): Market {
+  return /^\d{6}$/.test(sym) ? 'CN' : 'US'
+}
+
+function resolveSymbolDebounced() {
+  if (resolveTimer) clearTimeout(resolveTimer)
+  resolveTimer = setTimeout(resolveSymbol, 600)
+}
+
+async function resolveSymbol() {
+  const sym = form.value.symbol.trim()
+  if (!sym || sym === lastResolvedKey) return
+  // 名称已手动填写时不覆盖
+  const nameManual = form.value.name.trim().length > 0
+  lastResolvedKey = sym
+  resolving.value = true
+  resolveMsg.value = ''
+  try {
+    const { fundApi } = await import('@/repos/fundRepo')
+    const items = await fundApi.search(sym)
+    const hit = items.find(i => i.code === sym) || items[0]
+    if (hit) {
+      if (!nameManual) form.value.name = hit.name
+      // 自动纠正市场: 6 位数字 → CN
+      if (/^\d{6}$/.test(hit.code) && form.value.market !== 'CN') {
+        form.value.market = 'CN'
+      }
+      form.value.currency = form.value.market === 'US' ? 'USD' : 'CNY'
+      if (!categoryTouched.value) {
+        form.value.category = inferCategory(form.value.name, form.value.symbol)
+        applyCategoryTypeDefault()
+      }
+      resolveOk.value = true
+      resolveMsg.value = `已识别: ${hit.name} (${hit.code})`
+    } else {
+      resolveOk.value = false
+      resolveMsg.value = '未识别到该代码, 请手动填写名称'
+    }
+  } catch {
+    resolveOk.value = false
+    resolveMsg.value = '识别失败 (网络), 可手动填写'
+  } finally {
+    resolving.value = false
+  }
+}
 
 function openCreate() {
   form.value = { symbol: '', name: '', market: 'US', type: 'etf', category: 'other', currency: 'USD', avgCost: null, quantity: 0 }
   categoryTouched.value = false
+  resolving.value = false
+  resolveMsg.value = ''
+  resolveOk.value = false
+  lastResolvedKey = ''
   creating.value = true
 }
 
