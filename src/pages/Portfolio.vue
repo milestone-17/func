@@ -457,13 +457,15 @@ async function retryWeekMa(h: HoldingView) {
 }
 
 const creating = ref(false)
-watch(() => form.value.market, (m) => {
-  form.value.currency = m === 'US' ? 'USD' : 'CNY'
-})
 const form = ref<{ symbol: string; name: string; market: Market; type: HoldingType; category: HoldingCategory; currency: Currency; avgCost: number | null; quantity: number }>({
   symbol: '', name: '', market: 'US', type: 'etf', category: 'other', currency: 'USD', avgCost: null, quantity: 0
 })
 const canSave = computed(() => !!form.value.symbol && !!form.value.name && form.value.avgCost != null && form.value.quantity > 0)
+
+// 市场切换 → 货币联动 (必须在 form 声明之后注册)
+watch(() => form.value.market, (m) => {
+  form.value.currency = m === 'US' ? 'USD' : 'CNY'
+})
 
 function onCategoryChange() {
   categoryTouched.value = true
