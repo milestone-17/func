@@ -59,7 +59,11 @@ export async function importRoutes(app: FastifyInstance): Promise<void> {
         for (const b of rows) {
           if (!b || typeof b !== 'object' || !b.id) continue
           const row = rowFor(store, userId, b)
-          await model.upsert({ where: { id: row.id as string }, create: row, update: { ...row, id: undefined } })
+          // 属主校验: id 属于其他用户 → 跳过该行 (防导入劫持他人数据)
+          const model2 = tx[modelName as keyof typeof tx] as any
+          const existing = await model2.findUnique({ where: { id: row.id as string }, select: { userId: true } })
+          if (existing && existing.userId !== userId) continue
+          await model2.upsert({ where: { id: row.id as string }, create: row, update: { ...row, id: undefined } })
         }
         summary[store] = rows.length
       }

@@ -8,7 +8,7 @@ import dns from 'node:dns'
 // 行情源对 IPv6 出口不稳, 强制 IPv4 解析
 dns.setDefaultResultOrder('ipv4first')
 import { prisma } from '../lib/prisma'
-import { shanghaiNow, processUser, type NotifyConfigData } from '../lib/notification'
+import { shanghaiNow, processUser, timeToMinutes, type NotifyConfigData } from '../lib/notification'
 import { sendNotificationMail } from '../lib/mailer'
 import { getShMonthlyBars } from '../lib/tx-quote'
 import type { Env } from '../env'
@@ -26,13 +26,13 @@ export async function tickNotify(env?: Env): Promise<void> {
   try {
     const nowSh = shanghaiNow()
     const configs = await prisma.notificationConfig.findMany()
-    // 轻量预过滤, 只对可能命中的配置做后续 IO
+    // 轻量预过滤, 只对可能命中的配置做后续 IO (时间 ≥ 配置时刻, 允许失败后同槽位重试)
     const candidates = configs.filter((c) => {
       const d = c.data as Partial<NotifyConfigData & { lastSentSlot?: string; failCount?: number }>
       if (!d?.enabled) return false
       if ((d.failCount ?? 0) >= 3) return false
       if (d.lastSentSlot === nowSh.date) return false
-      if (d.time !== nowSh.time) return false
+      if (timeToMinutes(nowSh.time) < timeToMinutes(d.time || '00:00')) return false
       if (d.frequency === 'weekly' && d.dayOfWeek !== nowSh.dayOfWeek) return false
       return true
     })

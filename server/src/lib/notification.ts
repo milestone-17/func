@@ -54,6 +54,8 @@ export function shanghaiDayOfWeek(dateISO: string): number {
 /**
  * 该配置在给定上海时刻是否应触发。
  * 已发送槽位 → false (防重, 幂等)。
+ * 时间语义: now.time >= cfg.time 即视为到达配置时刻 (引擎每分钟 tick, 允许失败后
+ * 同槽位后续分钟重试; 首次成功后由 lastSentSlot 防重)。
  */
 export function shouldFire(
   cfg: NotifyConfigData,
@@ -62,7 +64,7 @@ export function shouldFire(
 ): boolean {
   if (!cfg.enabled) return false
   if (lastSentSlot === now.date) return false // 同槽位已发
-  if (cfg.time !== now.time) return false
+  if (timeToMinutes(now.time) < timeToMinutes(cfg.time)) return false
   if (cfg.frequency === 'weekly' && cfg.dayOfWeek !== now.dayOfWeek) return false
   return true
 }
@@ -338,21 +340,26 @@ export async function processUser(args: {
   }
 
   const mail = renderMail({ dateISO: nowSh.date, suggestions, channel, channelError })
+
+  /** 写回发送状态: 重读最新 data 仅合并 lastSentSlot/failCount, 避免用 tick 开始时的旧快照覆盖用户期间的配置修改 */
+  async function mergeSendState(fields: { lastSentSlot?: string; failCount?: number }): Promise<void> {
+    const latest = await prisma.notificationConfig.findUnique({ where: { userId } })
+    const cur = (latest?.data || {}) as Record<string, unknown>
+    await prisma.notificationConfig.update({
+      where: { userId },
+      data: { data: { ...cur, ...fields } }
+    })
+  }
+
   try {
     await args.send(cfg.notifyEmail, mail.subject, mail.html, mail.text)
     await prisma.notificationLog.create({ data: { userId, slot: nowSh.date, status: 'sent' } })
-    await prisma.notificationConfig.update({
-      where: { userId },
-      data: { data: { ...cfg, lastSentSlot: nowSh.date, failCount: 0 } }
-    })
+    await mergeSendState({ lastSentSlot: nowSh.date, failCount: 0 })
     return { ...base, status: 'sent' }
   } catch (e) {
     const msg = (e as Error).message
     await prisma.notificationLog.create({ data: { userId, slot: nowSh.date, status: 'failed', error: msg } })
-    await prisma.notificationConfig.update({
-      where: { userId },
-      data: { data: { ...cfg, failCount: (data.failCount || 0) + 1 } }
-    })
+    await mergeSendState({ failCount: (data.failCount || 0) + 1 })
     return { ...base, status: 'failed', error: msg }
   }
 }
@@ -363,9 +370,10 @@ async function buildUserSuggestions(userId: string, dateISO: string): Promise<Dc
   return buildSuggestions(
     rows.map(r => ({ id: r.id, data: r.data as DcaConfigLike['data'] })),
     async (symbol) => {
-      // 指数 (^开头) 走 index_data; 6 位基金代码走 fund_nav_history
-      if (/^\^/.test(symbol)) return loadCloses(symbol)
-      if (/^\d{6}$/.test(symbol)) return loadFundNavs(symbol)
+      // 基金标的 (fund:001594, 与前端 FUND_PREFIX 同格式) → fund_nav_history
+      const code = symbol.startsWith('fund:') ? symbol.slice(5) : symbol
+      if (/^\d{6}$/.test(code)) return loadFundNavs(code)
+      // 指数 (^开头) 等走 index_data
       return loadCloses(symbol)
     },
     dateISO

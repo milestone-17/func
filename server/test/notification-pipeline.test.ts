@@ -83,11 +83,11 @@ describe('processUser', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  it('时间不匹配 → skipped', async () => {
+  it('配置时刻之前 → skipped', async () => {
     await setupUser({ ...cfg() })
     const send = vi.fn()
     const out = await processUser({
-      userId, accountEmail: 'a@x.com', cfg: cfg(), nowSh: { ...nowSh, time: '09:00' },
+      userId, accountEmail: 'a@x.com', cfg: cfg(), nowSh: { ...nowSh, time: '07:00' },
       send, loadChannelBars: noopChannel, loadShClose: noopClose
     })
     expect(out.status).toBe('skipped')

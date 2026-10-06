@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
-import { createHmac } from 'node:crypto'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { requireAuth } from '../plugins/auth'
@@ -24,7 +24,9 @@ function verifyAdminToken(secret: string, token: string): string | null {
     const [h, b, sig] = token.split('.')
     if (!h || !b || !sig) return null
     const expect = createHmac('sha256', secret).update(`${h}.${b}`).digest('base64url')
-    if (sig !== expect) return null
+    const a = Buffer.from(sig)
+    const e = Buffer.from(expect)
+    if (a.length !== e.length || !timingSafeEqual(a, e)) return null
     const payload = JSON.parse(Buffer.from(b, 'base64url').toString()) as { kind?: string; exp?: number; sub?: string }
     if (payload.kind !== 'admin' || !payload.exp || payload.exp * 1000 < Date.now()) return null
     return payload.sub || null
@@ -43,6 +45,12 @@ async function requirePanel(req: FastifyRequest, reply: FastifyReply): Promise<s
     return null
   }
   return email
+}
+
+/** handler 内取当前管理员邮箱 (preHandler=requirePanel 已确保 token 有效) */
+function panelEmail(req: FastifyRequest): string {
+  const token = (req.cookies as Record<string, string | undefined>)[ADMIN_COOKIE] || ''
+  return verifyAdminToken(process.env.JWT_SECRET || '', token) || ''
 }
 
 /** 用户站 admin 接口守卫 (兼容保留) */
@@ -95,7 +103,6 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // 后台专用接口 (admin_token 鉴权) =====
   app.get('/api/admin/panel/summary', { preHandler: requirePanel }, async (req) => {
-    const email = await requirePanel(req, {} as FastifyReply)
     const [totalUsers, guestUsers, disabledUsers, activeToday] = await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { provider: 'guest' } }),
@@ -123,13 +130,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // 源优先级配置
   app.post('/api/admin/panel/source-priority', { preHandler: requirePanel }, async (req, reply) => {
-    const email = await requirePanel(req, {} as FastifyReply)
     const { priority } = (req.body || {}) as { priority?: SourceId[] }
     if (!Array.isArray(priority) || priority.length !== SOURCE_PRIORITY.length) {
       return reply.code(400).send({ error: 'priority 需为全部源的全排列' })
     }
     setSourcePriority(priority)
-    await audit(email!, 'set_source_priority', undefined, { priority })
+    await audit(panelEmail(req), 'set_source_priority', undefined, { priority })
     return { ok: true, priority: getSourcePriority() }
   })
 
@@ -166,29 +172,26 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.delete('/api/admin/panel/fund-pool/:code', { preHandler: requirePanel }, async (req, reply) => {
-    const email = await requirePanel(req, {} as FastifyReply)
     const { code } = req.params as { code: string }
     await prisma.dcaFund.updateMany({ where: { code }, data: { deletedAt: new Date() } })
-    await audit(email!, 'remove_fund_pool', code)
+    await audit(panelEmail(req), 'remove_fund_pool', code)
     return { ok: true }
   })
 
   // 后台用户禁用/启用
   app.patch('/api/admin/panel/users/:id', { preHandler: requirePanel }, async (req, reply) => {
-    const email = await requirePanel(req, {} as FastifyReply)
     const { id } = req.params as { id: string }
     const { disabled } = (req.body || {}) as { disabled?: boolean }
     const user = await prisma.user.findUnique({ where: { id } })
     if (!user) return reply.code(404).send({ error: '用户不存在' })
     if (user.role === 'admin') return reply.code(400).send({ error: '不能禁用管理员' })
     await prisma.user.update({ where: { id }, data: { disabled: !!disabled } })
-    await audit(email!, disabled ? 'disable_user' : 'enable_user', id)
+    await audit(panelEmail(req), disabled ? 'disable_user' : 'enable_user', id)
     return { ok: true }
   })
 
   // 后台删除用户 (软删全部数据 + 匿名化)
   app.delete('/api/admin/panel/users/:id', { preHandler: requirePanel }, async (req, reply) => {
-    const email = await requirePanel(req, {} as FastifyReply)
     const { id } = req.params as { id: string }
     const user = await prisma.user.findUnique({ where: { id } })
     if (!user) return reply.code(404).send({ error: '用户不存在' })
@@ -210,15 +213,14 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       prisma.dcaFund.updateMany({ where: { userId: id }, data: { deletedAt: now } }),
       prisma.user.update({ where: { id }, data: { disabled: true, email: `deleted-${id.slice(0, 8)}@deleted.local`, passwordHash: null, githubId: null } })
     ])
-    await audit(email!, 'delete_user', id)
+    await audit(panelEmail(req), 'delete_user', id)
     return { ok: true }
   })
 
   // 后台手动同步行情
   app.post('/api/admin/panel/sync-market', { preHandler: requirePanel }, async (req, reply) => {
-    const email = await requirePanel(req, {} as FastifyReply)
     const r = await syncMarketNow()
-    await audit(email!, 'sync_market', undefined, { rows: r.rows, source: r.source })
+    await audit(panelEmail(req), 'sync_market', undefined, { rows: r.rows, source: r.source })
     return { ok: r.rows > 0, rows: r.rows, source: r.source }
   })
 

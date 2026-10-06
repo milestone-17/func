@@ -1,4 +1,5 @@
 import { FastifyInstance, FastifyReply } from 'fastify'
+import { randomBytes } from 'node:crypto'
 import { hash as argonHash, verify as argonVerify } from '@node-rs/argon2'
 import { prisma } from '../lib/prisma'
 import { sendCodeMail } from '../lib/mailer'
@@ -127,7 +128,7 @@ export async function authRoutes(app: FastifyInstance, env: Env): Promise<void> 
   // GitHub OAuth
   app.get('/api/auth/github', async (_req, reply) => {
     if (!env.githubClientId) return reply.code(503).send({ error: 'GitHub 登录未配置' })
-    const state = Math.random().toString(36).slice(2)
+    const state = randomBytes(16).toString('hex')
     reply.setCookie('gh_state', state, { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 600 })
     const redirect = `https://github.com/login/oauth/authorize?client_id=${env.githubClientId}&state=${state}&scope=read:user%20user:email`
     return reply.redirect(redirect)

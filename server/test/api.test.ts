@@ -10,6 +10,10 @@ let cookieB = ''
 
 async function clearAll() {
   await prisma.emailCode.deleteMany()
+  // 资源表先于用户删除: 残留行属主校验会导致 409
+  await prisma.transaction.deleteMany()
+  await prisma.category.deleteMany()
+  await prisma.appSetting.deleteMany()
   await prisma.user.deleteMany()
   await prisma.indexData.deleteMany()
 }

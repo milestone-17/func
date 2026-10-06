@@ -63,8 +63,17 @@ describe('shouldFire', () => {
   it('未启用不命中', () => {
     expect(shouldFire(baseCfg({ enabled: false }), now0830, null)).toBe(false)
   })
-  it('时间不匹配不命中', () => {
+  it('配置时刻之前不命中', () => {
     expect(shouldFire(baseCfg({ time: '08:31' }), now0830, null)).toBe(false)
+  })
+  it('到达时刻后仍命中 (同槽位失败重试语义)', () => {
+    // 08:30 发送失败后, 08:31/09:00 仍应触发 (由 lastSentSlot 防重)
+    expect(shouldFire(baseCfg(), { date: '2026-03-16', time: '08:31', dayOfWeek: 1 }, null)).toBe(true)
+    expect(shouldFire(baseCfg(), { date: '2026-03-16', time: '09:00', dayOfWeek: 1 }, null)).toBe(true)
+  })
+  it('重试命中但次日槽位已推进 (跨日重置)', () => {
+    expect(shouldFire(baseCfg(), { ...now0830, time: '08:31' }, '2026-03-16')).toBe(false)
+    expect(shouldFire(baseCfg(), { ...now0830, time: '08:31' }, '2026-03-15')).toBe(true)
   })
   it('同槽位已发不命中 (防重)', () => {
     expect(shouldFire(baseCfg(), now0830, '2026-03-16')).toBe(false)
@@ -82,6 +91,8 @@ describe('shouldFire', () => {
     const sat = { date: '2026-03-21', time: '20:00', dayOfWeek: 6 }
     expect(shouldFire(baseCfg({ frequency: 'weekly', dayOfWeek: 6, time: '20:00' }), sat, null)).toBe(true)
     expect(shouldFire(baseCfg({ frequency: 'weekly', dayOfWeek: 6, time: '20:00' }), sat, '2026-03-21')).toBe(false)
+    // 周六 20:00 失败后, 周六 20:05 仍可重试
+    expect(shouldFire(baseCfg({ frequency: 'weekly', dayOfWeek: 6, time: '20:00' }), { ...sat, time: '20:05' }, null)).toBe(true)
   })
   it('边界: 00:00 触发', () => {
     const midnight = { date: '2026-03-16', time: '00:00', dayOfWeek: 1 }

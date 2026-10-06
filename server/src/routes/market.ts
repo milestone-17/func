@@ -73,7 +73,7 @@ const fundHistCache = new Map<string, { expiresAt: number; bars: FundBar[] }>()
 
 async function getCachedFundHistory(code: string, days: number): Promise<FundBar[]> {
   const hit = fundHistCache.get(code)
-  if (hit && hit.expiresAt > Date.now() && hit.bars.length >= Math.min(days, hit.bars.length)) {
+  if (hit && hit.expiresAt > Date.now() && hit.bars.length >= days) {
     return hit.bars.slice(-days)
   }
   // DB 有多少
@@ -83,15 +83,17 @@ async function getCachedFundHistory(code: string, days: number): Promise<FundBar
     take: 2000
   })
   let bars: FundBar[] = dbRows.map(r => ({ date: r.date, nav: r.nav, accNav: r.accNav ?? undefined }))
-  // 最新日期距今 >1 天则增量拉取
+  // 最新日期不足请求天数或明显过期 (T-1 净值场景: 落后 ≥2 天才回源, 避免白天反复全量拉取)
   const latest = bars.length ? bars[bars.length - 1].date : ''
   const today = new Date().toISOString().slice(0, 10)
-  const stale = !latest || latest < today
-  if (bars.length < days || stale) {
+  const staleDays = latest ? Math.floor((Date.parse(today) - Date.parse(latest)) / 86400_000) : Infinity
+  if (bars.length < days || staleDays >= 2) {
     const fetched = await fetchFundHistoryFromEm(code)
-    if (fetched.length > 0) {
-      // upsert 增量
-      for (const b of fetched) {
+    if (fetched.length > bars.length) {
+      // 只 upsert 库里没有的行 (增量, 避免每次全量写)
+      const known = new Set(dbRows.map(r => r.date))
+      const fresh = fetched.filter(b => !known.has(b.date))
+      for (const b of fresh) {
         await prisma.fundNavHistory.upsert({
           where: { code_date: { code, date: b.date } },
           create: { code, date: b.date, nav: b.nav, accNav: b.accNav ?? null },
