@@ -54,16 +54,32 @@ export async function marketRoutes(app: FastifyInstance): Promise<void> {
     }
   })
 
+  // 分时 (当日分钟线): 东财 trends2 1 分钟线 → 腾讯分钟线兜底; 场外基金返回空 (无盘口)
+  app.get('/api/market/trends', { preHandler: requireAuth }, async (req, reply) => {
+    const { symbol } = (req.query || {}) as { symbol?: string }
+    if (!symbol || !/^\d{6}$/.test(symbol)) return reply.code(400).send({ error: 'symbol 参数不合法' })
+    try {
+      const em = await fetchEmTrendsCn(symbol).catch(() => ({ points: [] as TrendPoint[], preClose: 0 }))
+      const alt = await fetchTxTrendsCn(symbol).catch(() => ({ points: [] as TrendPoint[], preClose: 0 }))
+      const data: TrendsData = em.points.length > 0 ? em : alt
+      reply.header('cache-control', 'public, max-age=60')
+      return { symbol, ...data }
+    } catch (e) {
+      return reply.code(502).send({ error: `分时获取失败: ${(e as Error).message}` })
+    }
+  })
+
   // OHLC 日K (自选/持仓 K 线图用): 场内 6 位 → 东财日K全量OHLC → 腾讯兜底; 场外基金 → 净值历史降级单值蜡烛
   app.get('/api/market/kline', { preHandler: requireAuth }, async (req, reply) => {
-    const { symbol, period } = (req.query || {}) as { symbol?: string; period?: string }
+    const { symbol, period, fqt } = (req.query || {}) as { symbol?: string; period?: string; fqt?: string }
     if (!symbol || !/^\d{6}$/.test(symbol)) return reply.code(400).send({ error: 'symbol 参数不合法' })
     if (period && !['day', 'week', 'month'].includes(period)) return reply.code(400).send({ error: 'period 参数不合法' })
     const code = symbol
     const aggPeriod = (period || 'day') as 'day' | 'week' | 'month'
+    const fq = fqt === '0' ? 0 : 1 // 1=前复权(默认) 0=不复权
     try {
-      const ohlc = await fetchEmOhlcCn(code).catch(() => [] as KlineBar[])
-      let bars = ohlc.length > 0 ? ohlc : await fetchTxOhlcCn(code).catch(() => [] as KlineBar[])
+      const ohlc = await fetchEmOhlcCn(code, fq).catch(() => [] as KlineBar[])
+      let bars = ohlc.length > 0 ? ohlc : await fetchTxOhlcCn(code, fq).catch(() => [] as KlineBar[])
       let kind: 'ohlc' | 'nav' = ohlc.length > 0 ? 'ohlc' : (bars.length > 0 ? 'ohlc' : 'nav')
       if (bars.length === 0) {
         // 场外基金: 无盘口价, 净值序列降级为单值蜡烛 (open=high=low=close=nav)
@@ -202,10 +218,71 @@ function aggregateBars(bars: KlineBar[], period: 'day' | 'week' | 'month'): Klin
 }
 
 /** 东财日K全量 OHLC (push2his klt=101 fqt=1; fields2 f51日期 f52开 f53收 f54高 f55低) */
-async function fetchEmOhlcCn(code: string): Promise<KlineBar[]> {
-  const market = /^[56]/.test(code) ? '1' : '0'
+/** 分时单点 */
+interface TrendPoint { time: string; price: number; avg: number; volume: number }
+/** 分时响应: points + 昨收基准 */
+interface TrendsData { points: TrendPoint[]; preClose: number }
+
+/** 东财当日分时 (push2his trends2 1 分钟线; preClose 由首点前取或接口 fields 提供) */
+/** 东财 market 前缀: 沪市(5/6开头, 000300等中证指数) → 1, 其余深市/399深指 → 0 */
+function emMarketOf(code: string): string {
+  if (/^(5|6)/.test(code)) return '1'
+  if (code === '000300' || code === '000905' || code === '000852') return '1' // 中证系指数按沪市
+  return '0'
+}
+
+async function fetchEmTrendsCn(code: string): Promise<TrendsData> {
+  const market = emMarketOf(code)
   const secid = `${market}.${code}`
-  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&klt=101&fqt=1&lmt=500&end=20500101&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&ut=fa5fd1943c7b386f172d6893dbfba10b`
+  const url = `https://push2his.eastmoney.com/api/qt/stock/trends2/get?secid=${secid}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f53,f56,f58&ndays=1&iscr=0&ut=fa5fd1943c7b386f172d6893dbfba10b`
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (func-server)' } })
+  if (!res.ok) throw new Error(`东财分时 HTTP ${res.status}`)
+  const json = (await res.json()) as { data?: { preClose?: number; trends?: string[] } }
+  const pre = Number(json?.data?.preClose) || 0
+  const out: TrendPoint[] = []
+  let cml = 0, cnt = 0 // 累计成交额/量 → 均价
+  for (const k of json?.data?.trends || []) {
+    const p = k.split(',')
+    const time = (p[0] || '').slice(11, 16) // HH:MM
+    const price = Number(p[1])
+    const vol = Math.round(Number(p[3]) || 0)
+    if (!/^\d{2}:\d{2}$/.test(time) || !Number.isFinite(price) || price <= 0) continue
+    cml += price * vol; cnt += vol
+    out.push({ time, price, avg: cnt > 0 ? cml / cnt : price, volume: vol })
+  }
+  if (!out.length) throw new Error('东财分时解析为空')
+  return { points: out, preClose: pre }
+}
+
+/** 腾讯当日分时 (web.ifzq.gtimg.cn分钟线, 兜底) */
+async function fetchTxTrendsCn(code: string): Promise<TrendsData> {
+  const tx = /^[56]/.test(code) || code === '000300' || code === '000905' || code === '000852' ? `sh${code}` : `sz${code}`
+  const url = `https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=${tx}`
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (func-server)' } })
+  if (!res.ok) throw new Error(`腾讯分时 HTTP ${res.status}`)
+  const json = (await res.json()) as { data?: Record<string, { data?: { data?: string[] }; qt?: Record<string, string> }> }
+  const node = json?.data?.[tx]?.data
+  const rows = node?.data || []
+  const pre = Number(json?.data?.[tx]?.qt?.[tx]?.split('~')[4]) || 0
+  const out: TrendPoint[] = []
+  let cml = 0, cnt = 0
+  for (const r of rows as string[]) {
+    const p = r.split(' ')
+    const time = (p[0] || '').slice(0, 5)
+    const price = Number(p[1])
+    const vol = Math.round(Number(p[2]) || 0)
+    if (!/^\d{2}:\d{2}$/.test(time) || !Number.isFinite(price) || price <= 0) continue
+    cml += price * vol; cnt += vol
+    out.push({ time, price, avg: cnt > 0 ? cml / cnt : price, volume: vol })
+  }
+  if (!out.length) throw new Error('腾讯分时解析为空')
+  return { points: out, preClose: pre }
+}
+
+async function fetchEmOhlcCn(code: string, fq = 1): Promise<KlineBar[]> {
+  const market = emMarketOf(code)
+  const secid = `${market}.${code}`
+  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&klt=101&fqt=${fq}&lmt=500&end=20500101&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&ut=fa5fd1943c7b386f172d6893dbfba10b`
   const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (func-server)' } })
   if (!res.ok) throw new Error(`东财OHLC HTTP ${res.status}`)
   const json = (await res.json()) as { data?: { klines?: string[] } }
@@ -224,9 +301,10 @@ async function fetchEmOhlcCn(code: string): Promise<KlineBar[]> {
 }
 
 /** 腾讯日K OHLC 兜底 (fqkline qfqday: r[0]日期 r[1]开 r[2]收 r[3]高 r[4]低) */
-async function fetchTxOhlcCn(code: string): Promise<KlineBar[]> {
-  const tx = /^[56]/.test(code) ? `sh${code}` : `sz${code}`
-  const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tx},day,,,660,qfq`
+async function fetchTxOhlcCn(code: string, fq = 1): Promise<KlineBar[]> {
+  const tx = emMarketOf(code) === '1' ? `sh${code}` : `sz${code}`
+  const fqTag = fq === 1 ? 'qfq' : ''
+  const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tx},day,,,660,${fqTag}`
   const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (func-server)' } })
   if (!res.ok) throw new Error(`腾讯OHLC HTTP ${res.status}`)
   const json = (await res.json()) as { data?: Record<string, { qfqday?: unknown[][]; day?: unknown[][] }> }
