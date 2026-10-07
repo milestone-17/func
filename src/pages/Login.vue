@@ -198,11 +198,20 @@ async function guest(): Promise<void> {
       <div v-else class="mode-links">
         <button link @click="switchMode('login')">返回登录</button>
       </div>
+
+      <p class="disclaimer">本工具仅供个人学习与记账管理使用, 页面中的定投建议、通道区间等信息均为算法演示, 不构成任何投资建议; 市场有风险, 投资需谨慎。</p>
     </div>
   </div>
 </template>
 
 <style scoped>
+.disclaimer {
+  margin-top: 16px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #9ca3af;
+  text-align: center;
+}
 .login-page {
   min-height: 100vh;
   display: flex;

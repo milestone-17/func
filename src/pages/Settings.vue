@@ -173,6 +173,7 @@
           <p class="text-xs text-ink3">多端同步 · 云端存储 · 数据按账号隔离</p>
           <p class="text-xs text-ink3">服务器每日自动备份, 保留 7 天</p>
           <p class="text-xs text-ink3">仍可导出 JSON 备份文件到本地</p>
+          <p class="text-xs text-ink3 pt-1.5 border-t border-black/5 mt-1.5">本应用仅供个人学习使用, 定投建议与通道信号均为算法演示, 不构成投资建议; 市场有风险, 投资需谨慎</p>
         </section>
         </div>
       </div>
