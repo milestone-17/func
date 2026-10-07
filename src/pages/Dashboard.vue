@@ -9,10 +9,12 @@
           </span>
           <div class="min-w-0 flex-1">
             <div class="text-sm font-semibold text-ink">觉得 func 有用？去 GitHub 给它点个 Star ⭐</div>
-            <p class="mt-0.5 text-xs text-ink2">开源项目持续迭代中，你的 Star 是作者更新的动力，谢谢大家了～</p>
+            <p class="mt-0.5 text-xs text-ink2">开源项目持续迭代中，你的 Star 是作者更新的动力；有其他建议或遇到 Bug？欢迎去提 Issue，谢谢大家了～</p>
           </div>
           <a href="https://github.com/milestone-17/func" target="_blank" rel="noopener"
              class="btn-primary !py-1.5 !text-xs shrink-0">⭐ 点个 Star</a>
+          <a href="https://github.com/milestone-17/func/issues" target="_blank" rel="noopener"
+             class="btn-ghost !py-1.5 !text-xs shrink-0">📝 提 Issue</a>
           <button @click="dismissStarBanner" class="btn-ghost !py-1.5 !text-xs shrink-0">关闭</button>
         </div>
       </section>
