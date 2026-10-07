@@ -73,10 +73,10 @@ function throttledSend(env: Env, mail: nodemailer.SendMailOptions): Promise<void
 }
 
 export async function sendCodeMail(env: Env, to: string, code: string, purpose: 'register' | 'reset'): Promise<void> {
-  const subject = purpose === 'register' ? '【本地财务】注册验证码' : '【本地财务】重置密码验证码'
+  const subject = purpose === 'register' ? '【长坡】注册验证码' : '【长坡】重置密码验证码'
   const text = `你的验证码是 ${code}，10 分钟内有效。如果不是你本人操作，请忽略本邮件。`
   await throttledSend(env, {
-    from: `"本地财务" <${env.smtpFrom}>`,
+    from: `"长坡 Snowlope" <${env.smtpFrom}>`,
     to,
     subject,
     text
@@ -87,7 +87,7 @@ export async function sendCodeMail(env: Env, to: string, code: string, purpose: 
 export async function sendNotificationMail(to: string, subject: string, html: string, text: string): Promise<void> {
   const env = currentEnv
   if (!env) throw new Error('SMTP 未配置')
-  await throttledSend(env, { from: `"本地财务" <${env.smtpFrom}>`, to, subject, text, html })
+  await throttledSend(env, { from: `"长坡 Snowlope" <${env.smtpFrom}>`, to, subject, text, html })
 }
 
 /** 设置邮件 (通知/测试) 的来源环境, 由 app 启动时注入 */
@@ -105,9 +105,9 @@ export function __resetMailerQueueForTest(): void {
 export async function sendTestMail(to: string): Promise<void> {
   if (!currentEnv) throw new Error('SMTP 未配置')
   await throttledSend(currentEnv, {
-    from: `"本地财务" <${currentEnv.smtpFrom}>`,
+    from: `"长坡 Snowlope" <${currentEnv.smtpFrom}>`,
     to,
-    subject: '【本地财务】通知邮箱验证',
+    subject: '【长坡】通知邮箱验证',
     text: '这是一封测试邮件, 收到即说明通知邮箱可用。'
   })
 }

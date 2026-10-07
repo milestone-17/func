@@ -20,6 +20,15 @@ const codeCooldown = ref(0)
 
 const title = computed(() => (mode.value === 'login' ? '登录' : mode.value === 'register' ? '注册' : '重置密码'))
 
+// redirect query 由 401 处理器写入, 可能携带部署 base 前缀 (如 /func/xxx)。
+// vue-router 会自动叠加 base, 这里归一化为路由内路径, 避免 /func/func/xxx 双前缀。
+function redirectPath(): string {
+  const raw = (route.query.redirect as string) || '/'
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '')
+  if (base && raw.startsWith(base + '/')) return raw.slice(base.length) || '/'
+  return raw
+}
+
 function switchMode(m: Mode): void {
   mode.value = m
   error.value = ''
@@ -62,8 +71,7 @@ async function submit(): Promise<void> {
       error.value = '密码已重置, 请用新密码登录'
       return
     }
-    const redirect = (route.query.redirect as string) || '/'
-    router.push(redirect)
+    router.push(redirectPath())
   } catch (e) {
     error.value = (e as Error).message
   } finally {
@@ -83,8 +91,7 @@ async function guest(): Promise<void> {
   error.value = ''
   try {
     await auth.guestLogin()
-    const redirect = (route.query.redirect as string) || '/'
-    router.push(redirect)
+    router.push(redirectPath())
   } catch (e) {
     error.value = (e as Error).message
     guestLoading.value = false
@@ -95,7 +102,7 @@ async function guest(): Promise<void> {
 <template>
   <div class="login-page">
     <div class="login-card">
-      <h1>本地财务</h1>
+      <h1>长坡</h1>
 
       <!-- 一级菜单: 登录 / 注册 / 访客体验 -->
       <div v-if="mode !== 'reset'" class="tabs">

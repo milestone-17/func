@@ -4,7 +4,7 @@
     <aside class="hidden md:flex fixed inset-y-0 left-0 z-40 w-56 flex-col border-r border-line bg-surface">
       <div class="flex items-center gap-2.5 h-14 px-5 border-b border-line">
         <span class="grid h-7 w-7 place-items-center rounded-lg bg-brand text-white text-xs font-bold shadow-sm">¥</span>
-        <h1 class="font-semibold text-[15px] tracking-tight">本地财务</h1>
+        <h1 class="font-semibold text-[15px] tracking-tight">长坡</h1>
       </div>
       <nav class="flex-1 overflow-y-auto px-2.5 py-3 space-y-0.5">
         <RouterLink
@@ -43,7 +43,7 @@
       <div class="mx-auto max-w-md px-4 h-14 flex items-center justify-between">
         <div class="flex items-center gap-2.5">
           <span class="grid h-6.5 w-6.5 place-items-center rounded-lg bg-brand text-white text-[11px] font-bold shadow-sm">¥</span>
-          <h1 class="font-semibold text-[15px] tracking-tight">本地财务</h1>
+          <h1 class="font-semibold text-[15px] tracking-tight">长坡</h1>
         </div>
         <RouterLink
           to="/settings"
@@ -64,7 +64,7 @@
 
     <!-- 移动端底部导航 -->
     <nav class="md:hidden fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/92 backdrop-blur-md">
-      <div class="mx-auto max-w-md grid grid-cols-8">
+      <div class="mx-auto max-w-md grid grid-cols-9">
         <RouterLink v-for="tab in tabs" :key="tab.to" :to="tab.to" :exact="tab.to === '/'" custom v-slot="{ isActive, href, navigate }">
           <a
             :href="href"
@@ -123,10 +123,10 @@ const tabs = [
   { to: '/', label: '总览', icon: ICONS.home },
   { to: '/ledger', label: '账本', icon: ICONS.wallet },
   { to: '/budget', label: '预算', icon: ICONS.pie },
+  { to: '/reports', label: '报表', icon: ICONS.trend },
   { to: '/portfolio', label: '投资', icon: ICONS.trend },
   { to: '/watch', label: '自选', icon: ICONS.star },
   { to: '/dca', label: '定投', icon: ICONS.calendar },
-  { to: '/suggest', label: '建议', icon: ICONS.lightbulb },
   { to: '/channel', label: '通道', icon: ICONS.channel },
   { to: '/permanent', label: '永久', icon: ICONS.shield }
 ]

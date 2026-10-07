@@ -11,8 +11,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png'],
       manifest: {
-        name: '本地个人财务',
-        short_name: '本地财务',
+        name: '长坡 Snowlope',
+        short_name: '长坡',
         description: '本地优先的个人财务 PWA',
         theme_color: '#10b981',
         background_color: '#0f172a',

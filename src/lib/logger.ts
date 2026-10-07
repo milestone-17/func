@@ -72,7 +72,7 @@ export function formatLogs(): string {
   })
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown'
   return [
-    `# 本地财务 前端日志导出`,
+    `# 长坡 Snowlope 前端日志导出`,
     `# 导出时间: ${new Date().toISOString()}`,
     `# 设备: ${ua}`,
     `# 条数: ${buffer.length}`,

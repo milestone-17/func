@@ -224,7 +224,7 @@ export function renderMail(args: {
 }): { subject: string; html: string; text: string } {
   const { dateISO, suggestions, channel } = args
   const lines: string[] = []
-  lines.push(`【本地财务】定投策略通知 ${dateISO}`)
+  lines.push(`【长坡】定投策略通知 ${dateISO}`)
   lines.push('')
 
   // 定投部分

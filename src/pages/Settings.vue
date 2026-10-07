@@ -177,7 +177,7 @@
         </div>
       </div>
 
-      <p class="text-center text-[11px] text-ink3 pt-2">本地财务 v2.0 · 云端版</p>
+      <p class="text-center text-[11px] text-ink3 pt-2">长坡 Snowlope v2.0 · 云端版</p>
     </div>
   </AppShell>
 </template>
