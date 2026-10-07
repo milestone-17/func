@@ -37,3 +37,7 @@ alwaysApply: false
 - `server/prisma/schema.prisma`（Transaction/Holding 模型字段）
 
 细节文档 `references/ledger-sync.md` 中的流程描述如与代码不符, 以代码为准并回改文档
+## 约束关联
+
+本 skill 涉及的不可变约束（详见 [_meta/constraints.md](../_meta/constraints.md)）：C-01, C-02, C-10
+术语表：[_meta/glossary.md](../_meta/glossary.md) · 踩坑记录：[_meta/pitfalls.md](../_meta/pitfalls.md)

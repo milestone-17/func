@@ -34,3 +34,7 @@ alwaysApply: false
 - `src/lib/settlement.ts`
 - `src/stores/dailyDca.ts`
 - `tests/unit/dca-sim-matrix.test.ts`
+## 约束关联
+
+本 skill 涉及的不可变约束（详见 [_meta/constraints.md](../_meta/constraints.md)）：C-01, C-03, C-08
+术语表：[_meta/glossary.md](../_meta/glossary.md) · 踩坑记录：[_meta/pitfalls.md](../_meta/pitfalls.md)

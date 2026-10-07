@@ -66,3 +66,7 @@ git add skills/ && git commit -m "docs(skill): 新增 <name>"
 ## 反向校验锚点
 
 - 本 skill 引用的脚本/代码：`skills/scripts/validate.mjs`、`skills/scripts/new-skill.sh`、`server/src/lib/skill-validate.ts`、`.githooks/pre-commit`
+
+## 约束关联
+
+本 skill 是流程手册, 不直接涉及不可变约束; 但维护流程本身受 C-10 (schema 纪律) 间接约束。三件套：[_meta/constraints.md](../_meta/constraints.md) / [_meta/glossary.md](../_meta/glossary.md) / [_meta/pitfalls.md](../_meta/pitfalls.md)

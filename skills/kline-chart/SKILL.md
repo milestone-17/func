@@ -30,3 +30,7 @@ alwaysApply: false
 
 - K 线相关页面在 `src/pages/`（Watchlist/Portfolio/Kline）
 - 若引入 echarts 等库需重写本 skill
+## 约束关联
+
+本 skill 涉及的不可变约束（详见 [_meta/constraints.md](../_meta/constraints.md)）：C-05
+术语表：[_meta/glossary.md](../_meta/glossary.md) · 踩坑记录：[_meta/pitfalls.md](../_meta/pitfalls.md)

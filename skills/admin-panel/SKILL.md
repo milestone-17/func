@@ -36,3 +36,7 @@ home / users / fund-pool / market / audit / releases / pitfalls / incidents / us
 
 - `admin-web/src/router/elegant/imports.ts`（views 映射）
 - `admin-web/src/locales/langs/zh-cn.ts`（route 标题）
+## 约束关联
+
+本 skill 涉及的不可变约束（详见 [_meta/constraints.md](../_meta/constraints.md)）：C-04, C-07
+术语表：[_meta/glossary.md](../_meta/glossary.md) · 踩坑记录：[_meta/pitfalls.md](../_meta/pitfalls.md)

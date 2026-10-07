@@ -38,3 +38,7 @@ alwaysApply: false
 - `server/prisma/schema.prisma`（模型字段）
 - 修改 schema 后必须 `prisma migrate dev` 并提交迁移目录
 - `server/src/lib/skill-repo.ts`（skill 知识库仓库层）
+## 约束关联
+
+本 skill 涉及的不可变约束（详见 [_meta/constraints.md](../_meta/constraints.md)）：C-03, C-05, C-06, C-09, C-10
+术语表：[_meta/glossary.md](../_meta/glossary.md) · 踩坑记录：[_meta/pitfalls.md](../_meta/pitfalls.md)

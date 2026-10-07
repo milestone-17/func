@@ -21,6 +21,8 @@
 | admin-panel | 管理后台页面接线（elegant-router/菜单/i18n）与 panel API | [SKILL.md](./admin-panel/SKILL.md) |
 | usage-guide | Skill 机制使用指南：四场景用法、维护流程、后台查看与防腐巡检 | [SKILL.md](./usage-guide/SKILL.md) |
 
+> **_meta/（项目级元知识）**：[constraints.md](./_meta/constraints.md) 不可变约束 C-xx · [glossary.md](./_meta/glossary.md) 名词对象 T-xx · [pitfalls.md](./_meta/pitfalls.md) 踩坑记录 P-<hash>。开发任何模块前先扫相关 C/P；新模型先登记 glossary；新 fix 合并后登记 pitfalls。
+
 ## 防腐规则（四层校验）
 
 1. **反向校验**：AI 改动代码后，检查 SKILL.md 中引用的文件路径/函数是否仍然存在
