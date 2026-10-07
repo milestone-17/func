@@ -5,6 +5,8 @@
  * - 统一错误格式
  */
 
+import { logEvent } from './logger'
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message)
@@ -22,12 +24,19 @@ function handleUnauthorized(): void {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    credentials: 'include',
-    headers: body !== undefined ? { 'content-type': 'application/json' } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined
-  })
+  let res: Response
+  try {
+    res = await fetch(path, {
+      method,
+      credentials: 'include',
+      headers: body !== undefined ? { 'content-type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined
+    })
+  } catch (e) {
+    // 网络层失败 (断网/DNS/超时)
+    logEvent('error', 'api', `${method} ${path} 网络失败`, e instanceof Error ? e.message : String(e))
+    throw e
+  }
   if (res.status === 401) {
     handleUnauthorized()
     throw new ApiError(401, '未登录或会话已过期')
@@ -38,6 +47,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       const j = await res.json()
       if (j?.error) msg = j.error
     } catch { /* non-json */ }
+    // 401 属于正常会话流转不记; 429/5xx/其他 4xx 记 warn, 5xx 记 error
+    logEvent(res.status >= 500 ? 'error' : 'warn', 'api', `${method} ${path} → ${res.status} ${msg}`)
     throw new ApiError(res.status, msg)
   }
   return (await res.json()) as T

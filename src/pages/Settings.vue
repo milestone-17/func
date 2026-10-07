@@ -147,6 +147,26 @@
           <svg class="h-4 w-4 text-ink3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
 
+        <!-- 日志导出 (故障排查) -->
+        <section class="card card-pad space-y-2">
+          <button class="flex w-full items-center justify-between" @click="logExpanded = !logExpanded">
+            <span class="section-title">问题诊断日志</span>
+            <span class="flex items-center gap-2 text-xs text-ink3">
+              {{ logEntries.length }} 条
+              <svg class="h-3.5 w-3.5 transition-transform" :class="logExpanded ? 'rotate-90' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </span>
+          </button>
+          <p class="text-xs text-ink3">记录请求错误与页面异常, 遇到问题时导出发给开发者可快速定位</p>
+          <template v-if="logExpanded">
+            <div class="flex flex-wrap gap-2">
+              <button class="btn-ghost !py-1.5 !text-xs" @click="copyLogs">复制日志</button>
+              <button class="btn-ghost !py-1.5 !text-xs" @click="onDownloadLogs">下载 .log</button>
+              <button class="btn-ghost !py-1.5 !text-xs !text-neg" @click="onClearLogs">清空</button>
+            </div>
+            <pre v-if="logText" class="max-h-60 overflow-auto rounded-lg bg-surface2 p-2 text-[10px] leading-4 whitespace-pre-wrap break-all">{{ logText }}</pre>
+          </template>
+        </section>
+
         <!-- 关于 -->
         <section class="card card-pad space-y-1.5">
           <span class="section-title mb-1">关于</span>
@@ -171,6 +191,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useAuthStore } from '@/stores/auth'
 import { useNotifyStore, WEEKDAY_LABELS } from '@/stores/notify'
 import { downloadBackup, importAll, isValidBundle } from '@/lib/backup'
+import { getLogs, clearLogs, formatLogs, downloadLogs, logEvent } from '@/lib/logger'
 import type { Theme } from '@/types/settings'
 
 const settings = useSettingsStore()
@@ -310,5 +331,25 @@ async function onImport(e: Event) {
     importOk.value = false
     importMsg.value = '导入失败: ' + (e?.message || '未知错误')
   }
+}
+
+/* ---------- 问题诊断日志 ---------- */
+const logExpanded = ref(false)
+const logTick = ref(0)
+const logEntries = computed(() => { void logTick.value; return getLogs() })
+const logText = computed(() => { void logTick.value; return logExpanded.value ? formatLogs() : '' })
+
+function copyLogs(): void {
+  void navigator.clipboard.writeText(formatLogs()).then(() => {
+    logEvent('info', 'user', '用户复制了诊断日志')
+  })
+}
+function onDownloadLogs(): void {
+  logEvent('info', 'user', '用户导出了诊断日志')
+  setTimeout(downloadLogs, 50)
+}
+function onClearLogs(): void {
+  clearLogs()
+  logTick.value++
 }
 </script>
