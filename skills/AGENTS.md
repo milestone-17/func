@@ -19,6 +19,7 @@
 | kline-chart | K 线图 canvas 自绘、MA/成交量/复权 | [SKILL.md](./kline-chart/SKILL.md) |
 | server-backend | Fastify 路由分层、Prisma schema、行情抓取 | [SKILL.md](./server-backend/SKILL.md) |
 | admin-panel | 管理后台页面接线（elegant-router/菜单/i18n）与 panel API | [SKILL.md](./admin-panel/SKILL.md) |
+| usage-guide | Skill 机制使用指南：四场景用法、维护流程、后台查看与防腐巡检 | [SKILL.md](./usage-guide/SKILL.md) |
 
 ## 防腐规则（四层校验）
 
