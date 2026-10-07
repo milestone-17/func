@@ -194,3 +194,60 @@ export async function diffVersion(rel: string, from: string, to: string): Promis
     return `diff 失败: ${(e as Error).message}`
   }
 }
+
+// ============ _meta 三件套结构化解析 ============
+export interface KvItem { k: string; v: string }
+export interface ConstraintItem { id: string; title: string; items: KvItem[] }
+export interface GlossaryItem { id: string; title: string; prisma: string | null; desc: string }
+export interface PitfallItem { module: string; id: string; title: string; items: KvItem[] }
+
+function kvLinesOf(body: string, into: KvItem[]): void {
+  for (const line of body.split(/\r?\n/)) {
+    const m = /^\s*-\s+(.+?)：(.*)$/.exec(line)
+    if (m) into.push({ k: m[1].trim(), v: m[2].trim() })
+    else if (/^\s*-\s+/.test(line)) into.push({ k: '', v: line.replace(/^\s*-\s+/, '').trim() })
+  }
+}
+
+/** 解析 skills/_meta/{constraints,glossary,pitfalls}.md 为结构化数据 */
+export function parseSkillMeta(): { constraints: ConstraintItem[]; glossary: GlossaryItem[]; pitfalls: PitfallItem[] } {
+  const constraints: ConstraintItem[] = []
+  const glossary: GlossaryItem[] = []
+  const pitfalls: PitfallItem[] = []
+  const read = (f: string) => {
+    const p = path.join(SKILLS_DIR, '_meta', f)
+    return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''
+  }
+
+  // constraints: ## C-xx 标题 + kv bullets
+  let cur: ConstraintItem | null = null
+  for (const line of read('constraints.md').split(/\r?\n/)) {
+    const h = /^## (C-\d+)\s+(.*)$/.exec(line)
+    if (h) { cur = { id: h[1], title: h[2].trim(), items: [] }; constraints.push(cur); continue }
+    if (cur) kvLinesOf(line, cur.items)
+  }
+
+  // glossary: ## T-xxx — 标题 + `- Prisma: \`X\`` + 描述
+  let g: GlossaryItem | null = null
+  for (const line of read('glossary.md').split(/\r?\n/)) {
+    const h = /^## (T-[\w-]+)\s*[—-]?\s*(.*)$/.exec(line)
+    if (h) { g = { id: h[1], title: h[2].replace(/^[—-]\s*/, '').trim(), prisma: null, desc: '' }; glossary.push(g); continue }
+    if (!g) continue
+    const pm = /^\s*-\s*Prisma:\s*`(\w+)`/.exec(line)
+    if (pm) { g.prisma = pm[1]; continue }
+    if (/^\s*-\s+/.test(line)) g.desc += (g.desc ? ' ' : '') + line.replace(/^\s*-\s+/, '').trim()
+    else if (line.trim() && !line.startsWith('#') && !line.startsWith('>')) g.desc += (g.desc ? ' ' : '') + line.trim()
+  }
+
+  // pitfalls: ## 模块 → ### P-hash 标题 + kv bullets
+  let mod = ''
+  let pit: PitfallItem | null = null
+  for (const line of read('pitfalls.md').split(/\r?\n/)) {
+    const h2 = /^## (?!#)(.+)$/.exec(line)
+    if (h2) { mod = h2[1].trim(); continue }
+    const h3 = /^### (P-[\w-]+)\s+(.*)$/.exec(line)
+    if (h3) { pit = { module: mod, id: h3[1], title: h3[2].trim(), items: [] }; pitfalls.push(pit); continue }
+    if (pit) kvLinesOf(line, pit.items)
+  }
+  return { constraints, glossary, pitfalls }
+}

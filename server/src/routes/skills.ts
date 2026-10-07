@@ -10,7 +10,7 @@
  * GET  /api/admin/panel/skills/diff?path=&from=&to=  两版本 diff (to 为空 = 工作区)
  */
 import { FastifyInstance } from 'fastify'
-import { listSkills, listSkillFiles, readSkillFile, fileHistory, globalHistory, diffVersion } from '../lib/skill-repo'
+import { listSkills, listSkillFiles, readSkillFile, fileHistory, globalHistory, diffVersion, parseSkillMeta } from '../lib/skill-repo'
 import { validateSkills } from '../lib/skill-validate'
 import { requirePanel } from './admin'
 
@@ -50,5 +50,21 @@ export async function skillRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/admin/panel/skills/validate', { preHandler: requirePanel }, async () => {
     return validateSkills()
+  })
+
+  app.get('/api/admin/panel/skills/meta', { preHandler: requirePanel }, async () => {
+    const parsed = parseSkillMeta()
+    const fm = async (p: string) => {
+      const f = await readSkillFile(p)
+      return { updatedAt: f?.updatedAt ?? null, lastCommit: f?.lastCommit ?? null }
+    }
+    return {
+      ...parsed,
+      files: {
+        constraints: await fm('_meta/constraints.md'),
+        glossary: await fm('_meta/glossary.md'),
+        pitfalls: await fm('_meta/pitfalls.md')
+      }
+    }
   })
 }

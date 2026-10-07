@@ -64,3 +64,35 @@ export interface SkillValidateReport {
 export function fetchSkillValidate() {
   return request<SkillValidateReport>({ url: '/api/admin/panel/skills/validate', method: 'get' });
 }
+
+export interface SkillKv {
+  k: string;
+  v: string;
+}
+export interface SkillConstraint {
+  id: string;
+  title: string;
+  items: SkillKv[];
+}
+export interface SkillGlossary {
+  id: string;
+  title: string;
+  prisma: string | null;
+  desc: string;
+}
+export interface SkillPitfall {
+  module: string;
+  id: string;
+  title: string;
+  items: SkillKv[];
+}
+export interface SkillMetaBundle {
+  constraints: SkillConstraint[];
+  glossary: SkillGlossary[];
+  pitfalls: SkillPitfall[];
+  files: Record<'constraints' | 'glossary' | 'pitfalls', { updatedAt: string | null; lastCommit: string | null }>;
+}
+
+export function fetchSkillMeta() {
+  return request<SkillMetaBundle>({ url: '/api/admin/panel/skills/meta', method: 'get' });
+}

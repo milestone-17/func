@@ -8,9 +8,10 @@ import {
   fetchSkillFile,
   fetchSkillHistory,
   fetchSkillDiff,
-  fetchSkillValidate
+  fetchSkillValidate,
+  fetchSkillMeta
 } from '@/service/api/skills';
-import type { SkillMeta, SkillFileMeta, SkillCommit, SkillValidateReport } from '@/service/api/skills';
+import type { SkillMeta, SkillFileMeta, SkillCommit, SkillValidateReport, SkillMetaBundle } from '@/service/api/skills';
 import { fmtTime2 } from '@/service/api/records';
 
 defineOptions({ name: 'SkillsView' });
@@ -35,6 +36,9 @@ const diffLoading = ref(false);
 
 // ===== 巡检状态 =====
 const report = ref<SkillValidateReport | null>(null);
+const metaBundle = ref<SkillMetaBundle | null>(null);
+const metaLoading = ref(false);
+let metaLoaded = false;
 const checkLoading = ref(false);
 
 async function runCheck() {
@@ -42,6 +46,25 @@ async function runCheck() {
   const { data, error } = await fetchSkillValidate();
   checkLoading.value = false;
   if (!error && data) report.value = data;
+}
+
+async function loadMeta() {
+  metaLoading.value = true;
+  const { data, error } = await fetchSkillMeta();
+  metaLoading.value = false;
+  if (!error && data) {
+    metaBundle.value = data;
+    metaLoaded = true;
+  }
+}
+
+function openMeta() {
+  activeFile.value = '_meta · 项目级要素';
+  fileContent.value = '';
+  renderedHtml.value = '';
+  fileMeta.value = { updatedAt: null, lastCommit: null };
+  tab.value = 'meta';
+  if (!metaLoaded) loadMeta();
 }
 
 /** 简易 markdown → html (标题/列表/代码/表格/链接/粗体/行内代码) */
@@ -185,6 +208,7 @@ function onTab(name: string) {
   if (name === 'history') loadHistory();
   if (name === 'diff') loadDiff();
   if (name === 'check' && !report.value) runCheck();
+  if (name === 'meta' && !metaLoaded) loadMeta();
 }
 
 function fmtDate(iso: string | null): string {
@@ -226,6 +250,16 @@ onMounted(load);
                 <div v-if="s.globs.length" class="mt-4px text-11px text-gray-400">globs: {{ s.globs.join(', ') }}</div>
               </el-collapse-item>
             </el-collapse>
+          </div>
+        </div>
+        <div class="mb-10px border-t border-gray-100 pt-8px">
+          <div
+            class="skill-file cursor-pointer rounded-4px px-8px py-4px text-13px"
+            :class="{ 'bg-primary bg-opacity-10 text-primary font-600': tab === 'meta' }"
+            @click="openMeta"
+          >
+            <div class="truncate font-600">项目级要素（_meta）</div>
+            <div class="text-11px text-gray-400">约束 C-xx · 术语 T-xx · 踩坑 P-hash</div>
           </div>
         </div>
         <div v-for="g in fileGroups" :key="g.skill" class="mb-10px">
@@ -310,6 +344,56 @@ onMounted(load);
             <div v-for="(w, i) in report.warns" :key="'w' + i" class="mb-4px rounded-4px bg-orange-50 px-10px py-6px text-13px text-orange-500">{{ w }}</div>
           </template>
           <el-empty v-else-if="!checkLoading" description="点击「运行巡检」检查文档与代码的漂移" :image-size="60" />
+        </el-tab-pane>
+        <el-tab-pane label="要素总览" name="meta">
+          <div v-loading="metaLoading">
+            <template v-if="metaBundle">
+              <div class="mb-8px flex items-center gap-8px">
+                <el-tag type="danger" size="small">不可变约束</el-tag>
+                <span class="text-12px text-gray-400">{{ metaBundle.constraints.length }} 条 · 最近更新 {{ fmtDate(metaBundle.files.constraints.updatedAt) }} · {{ metaBundle.files.constraints.lastCommit }}</span>
+              </div>
+              <el-collapse class="mb-16px">
+                <el-collapse-item v-for="c in metaBundle.constraints" :key="c.id" :name="c.id">
+                  <template #title>
+                    <el-tag size="small" type="danger" effect="plain" class="mr-6px">{{ c.id }}</el-tag>
+                    <span class="text-13px font-600">{{ c.title }}</span>
+                  </template>
+                  <div v-for="(it, i) in c.items" :key="i" class="mb-2px text-13px">
+                    <span v-if="it.k" class="text-gray-500">{{ it.k }}：</span><span>{{ it.v }}</span>
+                  </div>
+                </el-collapse-item>
+              </el-collapse>
+
+              <div class="mb-8px flex items-center gap-8px">
+                <el-tag type="primary" size="small">名词对象</el-tag>
+                <span class="text-12px text-gray-400">{{ metaBundle.glossary.length }} 个 · 最近更新 {{ fmtDate(metaBundle.files.glossary.updatedAt) }} · {{ metaBundle.files.glossary.lastCommit }}</span>
+              </div>
+              <el-table :data="metaBundle.glossary" size="small" class="mb-16px" max-height="320">
+                <el-table-column prop="id" label="ID" width="170" />
+                <el-table-column prop="prisma" label="Prisma 模型" width="200" />
+                <el-table-column prop="title" label="术语" width="130" />
+                <el-table-column prop="desc" label="说明" show-overflow-tooltip />
+              </el-table>
+
+              <div class="mb-8px flex items-center gap-8px">
+                <el-tag type="warning" size="small">踩坑记录</el-tag>
+                <span class="text-12px text-gray-400">{{ metaBundle.pitfalls.length }} 条 · 最近更新 {{ fmtDate(metaBundle.files.pitfalls.updatedAt) }} · {{ metaBundle.files.pitfalls.lastCommit }}</span>
+              </div>
+              <el-collapse>
+                <el-collapse-item v-for="p in metaBundle.pitfalls" :key="p.id" :name="p.id">
+                  <template #title>
+                    <el-tag size="small" type="warning" effect="plain" class="mr-6px">{{ p.id }}</el-tag>
+                    <span class="text-13px">{{ p.title }}</span>
+                    <el-tag size="small" effect="plain" class="ml-6px">{{ p.module }}</el-tag>
+                  </template>
+                  <div v-for="(it, j) in p.items" :key="j" class="mb-2px text-13px">
+                    <span v-if="it.k" class="text-gray-500">{{ it.k }}：</span><span>{{ it.v }}</span>
+                  </div>
+                </el-collapse-item>
+              </el-collapse>
+            </template>
+            <el-empty v-else-if="!metaLoading" description="暂无数据" :image-size="60" />
+          </div>
         </el-tab-pane>
       </el-tabs>
     </el-card>
