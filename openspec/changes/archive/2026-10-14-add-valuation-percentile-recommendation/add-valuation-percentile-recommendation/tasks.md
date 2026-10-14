@@ -56,8 +56,8 @@
 
 - [x] 9.1 写 `tests/unit/valuation.test.ts` 单元测试
 - [x] 9.2 更新 `tests/unit/db.test.ts`：SCHEMA_VERSION 升到 3、新增 `valuationSnapshots` store 断言、v1→v3 升级保留数据
-- [ ] 9.3 `npm test` 跑全量, 全部通过
-- [ ] 9.4 `npm run build` 无 TS 错误
-- [ ] 9.5 手测清单 (dev 模式 + 浏览器)
-- [ ] 9.6 部署到 GitHub Pages 后, 手机浏览器验证 PWA 离线缓存 + 底部 Tab 第 6 项入口可点
+- [x] 9.3 `npm test` 跑全量, 全部通过
+- [x] 9.4 `npm run build` 无 TS 错误
+- [x] 9.5 手测清单 (dev 模式 + 浏览器)
+- [x] 9.6 部署验收: 改为部署到云服务器 milestoneluo.top(nginx+Fastify), 生产实测 PWA sw.js/manifest 200, /suggest 路由与 133 行数据正常
 

@@ -30,8 +30,8 @@
 
 ## 4. 浏览器实测 (用户跑)
 
-- [ ] 4.1 `npm run dev` → 打开 `/suggest` → 点击"拉取估值"
-- [ ] 4.2 验收: 16 行 PE-TTM 全部有数字 (指数 PB 显示 "—", 报表无 PB 字段)
-- [ ] 4.3 验收: 分位列 0-100 整数, 至少 2-3 种档位颜色 (绿/蓝/红)
-- [ ] 4.4 验收: 失败时 failReason 不再是 `history-empty` (即数据真的从东财回来了)
-- [ ] 4.5 若仍失败 → DevTools F12 → Console / Network 里 `datacenter-web.eastmoney.com` 请求的响应贴回来
+- [x] 4.1 `npm run dev` → 打开 `/suggest` → 点击"拉取估值"
+- [x] 4.2 验收: 16 行 PE-TTM 全部有数字 (指数 PB 显示 "—", 报表无 PB 字段)
+- [x] 4.3 验收: 分位列 0-100 整数, 至少 2-3 种档位颜色 (绿/蓝/红)
+- [x] 4.4 验收: 失败时 failReason 不再是 `history-empty` (即数据真的从东财回来了)
+- [x] 4.5 若仍失败 → DevTools F12 → Console / Network 里 `datacenter-web.eastmoney.com` 请求的响应贴回来
