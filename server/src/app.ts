@@ -13,6 +13,7 @@ import { proxyRoutes } from './routes/proxy'
 import { adminRoutes } from './routes/admin'
 import { notificationRoutes } from './routes/notifications'
 import { skillRoutes } from './routes/skills'
+import { backtestRoutes } from './routes/backtest'
 import type { Env } from './env'
 
 export async function buildApp(env: Env, opts: { serveStatic?: boolean } = {}): Promise<FastifyInstance> {
@@ -31,6 +32,7 @@ export async function buildApp(env: Env, opts: { serveStatic?: boolean } = {}): 
   await adminRoutes(app)
   await notificationRoutes(app)
   await skillRoutes(app)
+  await backtestRoutes(app)
 
   // 单容器模式: 直接服务前端 dist (base=/func/) + 管理后台 admin-web (base=/_admin/)
   if (opts.serveStatic) {

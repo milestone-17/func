@@ -13,7 +13,7 @@ vi.mock('@/lib/indexChannel', async (importOriginal) => {
   return { ...actual, fetchMonthlyBars: vi.fn(async () => null) }
 })
 
-import { useChannelStore, CHANNEL_SELECTION_KEY } from '@/stores/channel'
+import { useChannelStore, CHANNEL_SELECTION_KEY, CHANNEL_INDICES_KEY } from '@/stores/channel'
 import { fetchMonthlyBars, fitChannel, type MonthlyBar } from '@/lib/indexChannel'
 import { metaRepo } from '@/repos/metaRepo'
 import { resetDbForTests } from '@/repos/db'
@@ -74,23 +74,71 @@ describe('channel store', () => {
     expect(st2.byIndex['1.000001'].channel).not.toBeNull()
   })
 
-  it('选择持久化: 重进恢复上次指数 (默认上证)', async () => {
+  it('默认列表: 全新用户仅上证', async () => {
     const st = useChannelStore()
     expect(st.selection).toBe('1.000001') // 默认
+    await st.loadIndices()
+    expect(st.myIndices).toEqual(['1.000001'])
+    await st.loadSelection()
+    expect(st.selection).toBe('1.000001')
+  })
+
+  it('列表管理: 添加/移除持久化, 删到只剩 1 个被拒, 删当前选中自动切换', async () => {
     vi.mocked(fetchMonthlyBars).mockResolvedValue(miniBars())
-    await st.selectIndex('0.399006') // 切创业板指
+    const st = useChannelStore()
+    await st.loadIndices()
+
+    await st.addIndex('0.399006')
+    expect(st.myIndices).toEqual(['1.000001', '0.399006'])
+    expect(st.selection).toBe('0.399006') // 添加后选中
+    expect(await metaRepo.get(CHANNEL_INDICES_KEY)).toMatchObject({ value: ['1.000001', '0.399006'] })
+
+    // 重复添加 → 仅切换选中, 不重复入列
+    await st.addIndex('0.399006')
+    expect(st.myIndices).toEqual(['1.000001', '0.399006'])
+
+    // 删除当前选中 → 自动切到剩余第一个
+    await st.removeIndex('0.399006')
+    expect(st.myIndices).toEqual(['1.000001'])
+    expect(st.selection).toBe('1.000001')
+
+    // 删到只剩 1 个 → 拒绝
+    await st.removeIndex('1.000001')
+    expect(st.myIndices).toEqual(['1.000001'])
+
+    // 非法 secid → 忽略
+    await st.addIndex('9.999999')
+    expect(st.myIndices).toEqual(['1.000001'])
+  })
+
+  it('选择持久化: 列表内恢复上次选择; 不在列表/非法 → 回落列表第一个', async () => {
+    vi.mocked(fetchMonthlyBars).mockResolvedValue(miniBars())
+    const st = useChannelStore()
+    await st.loadIndices()
+    await st.addIndex('0.399006') // 列表 [上证, 创业板] 且选中创业板
     expect(await metaRepo.get(CHANNEL_SELECTION_KEY)).toMatchObject({ value: '0.399006' })
 
     setActivePinia(createPinia())
     const st2 = useChannelStore()
+    await st2.loadIndices()
     await st2.loadSelection()
-    expect(st2.selection).toBe('0.399006')
-    // 记忆了非法值 → 回落默认
+    expect(st2.selection).toBe('0.399006') // 列表内 → 恢复
+
+    // 记忆了列表外/非法值 → 回落列表第一个
     await metaRepo.put({ key: CHANNEL_SELECTION_KEY, value: '9.999999' })
     setActivePinia(createPinia())
     const st3 = useChannelStore()
+    await st3.loadIndices()
     await st3.loadSelection()
     expect(st3.selection).toBe('1.000001')
+  })
+
+  it('旧用户迁移: 只有选择记忆无列表 → 列表=[选择]', async () => {
+    // 老用户遗留: 曾选中创业板 (列表记录不存在)
+    await metaRepo.put({ key: CHANNEL_SELECTION_KEY, value: '0.399006' })
+    const st = useChannelStore()
+    await st.loadIndices()
+    expect(st.myIndices).toEqual(['0.399006'])
   })
 
   it('拉取失败: 无缓存 → 纯失败态; retry 成功后清 error', async () => {

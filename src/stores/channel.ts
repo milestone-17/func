@@ -1,5 +1,5 @@
 /**
- * 指数顶底通道 store: 多指数独立缓存 (meta['index-channel-<secid>']) + 选择记忆。
+ * 指数顶底通道 store: 多指数独立缓存 (meta['index-channel-<secid>']) + 选择记忆 + 用户自管理列表。
  * 模式与 weekMa store 一致: JSON round-trip 剥响应式再写 IndexedDB。
  */
 import { defineStore } from 'pinia'
@@ -8,6 +8,7 @@ import { fetchMonthlyBars, fitChannel, PRESET_INDICES, type MonthlyBar, type Cha
 import { metaRepo } from '@/repos/metaRepo'
 
 export const CHANNEL_SELECTION_KEY = 'index-channel-selection'
+export const CHANNEL_INDICES_KEY = 'index-channel-indices' // 用户自管理列表
 const channelKey = (secid: string) => `index-channel-${secid}`
 
 export interface IndexChannelData {
@@ -17,10 +18,16 @@ export interface IndexChannelData {
   error?: string
 }
 
+/** 用户列表缺省: 仅上证 (既有数据不受影响, 首次加载时迁移) */
+const DEFAULT_INDICES = [PRESET_INDICES[0].secid]
+
 export const useChannelStore = defineStore('channel', () => {
   const selection = ref(PRESET_INDICES[0].secid)
   const byIndex = ref<Record<string, IndexChannelData>>({})
   const loading = ref(false)
+  /** 用户自管理的指数列表 (secid 数组), meta 持久化 */
+  const myIndices = ref<string[]>([...DEFAULT_INDICES])
+  const listLoaded = ref(false)
 
   function current(): IndexChannelData | undefined {
     return byIndex.value[selection.value]
@@ -43,12 +50,32 @@ export const useChannelStore = defineStore('channel', () => {
     }
   }
 
-  /** 恢复上次选择的指数 (无记忆则默认上证) */
+  /** 恢复用户列表 (旧用户: 曾存过选择但无列表 → 迁移为 [选择]; 全新用户 → 默认仅上证) */
+  async function loadIndices(): Promise<void> {
+    const saved = await metaRepo.get(CHANNEL_INDICES_KEY)
+    if (Array.isArray(saved?.value) && saved.value.every((s: unknown) => typeof s === 'string')) {
+      myIndices.value = saved.value
+    } else {
+      // 迁移: 老用户只有选择记忆, 把它放进列表; 否则默认上证
+      const sel = await metaRepo.get(CHANNEL_SELECTION_KEY)
+      myIndices.value = typeof sel?.value === 'string' ? [sel.value] : [...DEFAULT_INDICES]
+      await persistIndices().catch(() => {})
+    }
+    listLoaded.value = true
+  }
+
+  async function persistIndices(): Promise<void> {
+    await metaRepo.put({ key: CHANNEL_INDICES_KEY, value: JSON.parse(JSON.stringify(myIndices.value)) })
+  }
+
+  /** 恢复上次选择的指数 (不在列表内则用列表第一个) */
   async function loadSelection(): Promise<void> {
     const saved = await metaRepo.get(CHANNEL_SELECTION_KEY)
     const secid = saved?.value
-    if (typeof secid === 'string' && PRESET_INDICES.some(i => i.secid === secid)) {
+    if (typeof secid === 'string' && myIndices.value.includes(secid)) {
       selection.value = secid
+    } else if (myIndices.value.length > 0) {
+      selection.value = myIndices.value[0]
     }
   }
 
@@ -81,7 +108,11 @@ export const useChannelStore = defineStore('channel', () => {
   /** 选择指数: 记忆 + 确保数据 (缓存优先, 无缓存前台拉取; 有缓存后台刷新) */
   async function selectIndex(secid: string): Promise<void> {
     selection.value = secid
-    await metaRepo.put({ key: CHANNEL_SELECTION_KEY, value: secid })
+    try {
+      await metaRepo.put({ key: CHANNEL_SELECTION_KEY, value: secid })
+    } catch {
+      // 选择记忆保存失败 (如跨用户 id 冲突) 不应阻断行情自动拉取
+    }
     await loadFromCache(secid)
     const d = byIndex.value[secid]
     if (!d?.channel) {
@@ -91,10 +122,36 @@ export const useChannelStore = defineStore('channel', () => {
     }
   }
 
+  /** 添加指数到用户列表 (去重) 并选中 */
+  async function addIndex(secid: string): Promise<void> {
+    if (!PRESET_INDICES.some(i => i.secid === secid)) return
+    if (myIndices.value.includes(secid)) {
+      await selectIndex(secid)
+      return
+    }
+    myIndices.value = [...myIndices.value, secid]
+    try {
+      await persistIndices()
+    } catch { /* 列表持久化失败不阻断使用 */ }
+    await selectIndex(secid)
+  }
+
+  /** 从用户列表移除 (至少保留一个; 若删的是当前选中则切换到剩余第一个) */
+  async function removeIndex(secid: string): Promise<void> {
+    if (myIndices.value.length <= 1) return
+    myIndices.value = myIndices.value.filter(s => s !== secid)
+    try {
+      await persistIndices()
+    } catch { /* 忽略 */ }
+    if (selection.value === secid && myIndices.value.length > 0) {
+      await selectIndex(myIndices.value[0])
+    }
+  }
+
   /** 失败重试 (单指数, 前台) */
   async function retry(secid: string): Promise<void> {
     await refresh(secid, { force: true })
   }
 
-  return { selection, byIndex, loading, current, loadFromCache, loadSelection, selectIndex, refresh, retry }
+  return { selection, byIndex, loading, myIndices, listLoaded, current, loadFromCache, loadIndices, loadSelection, selectIndex, refresh, retry, addIndex, removeIndex }
 })

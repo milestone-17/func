@@ -14,3 +14,9 @@ vite.config.d.ts
 server/.env
 server.log
 src/pages_backup/
+# 备份目录/文件（勿提交）
+admin-web.bak/
+*.bak-seo
+# admin-web 重构后的 js 编译残留（保留 .ts 源码）
+admin-web/src/**/*.js
+admin-web/uno.config.js

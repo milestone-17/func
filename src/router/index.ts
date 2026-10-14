@@ -13,6 +13,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/dca', name: 'dca', component: () => import('@/pages/Dca.vue') },
   { path: '/suggest', name: 'suggest', component: () => import('@/pages/Suggest.vue') },
   { path: '/channel', name: 'channel', component: () => import('@/pages/Channel.vue') },
+  { path: '/reports', name: 'reports', component: () => import('@/pages/Reports.vue') },
   { path: '/settings', name: 'settings', component: () => import('@/pages/Settings.vue') },
   { path: '/admin', name: 'admin', component: () => import('@/pages/Admin.vue'), meta: { admin: true } }
 ]

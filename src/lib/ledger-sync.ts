@@ -5,14 +5,20 @@
  */
 import { transactionRepo } from '@/repos/transactionRepo'
 import { categoryRepo } from '@/repos/categoryRepo'
-import { newId } from '@/repos/base'
 import type { ISODate } from '@/types/common'
 
 let investCategoryId: string | null | undefined
+/** in-flight 的分类解析 Promise (并发单飞, 防止重复建「投资」分类) */
+let pendingResolve: Promise<string | null> | null = null
 
-/** 取或建「投资」支出分类 (缓存结果) */
-async function investmentCategoryId(): Promise<string | null> {
-  if (investCategoryId !== undefined) return investCategoryId
+/** 取或建「投资」支出分类 (缓存结果; 并发调用共享同一次解析; 失败不缓存可重试) */
+function investmentCategoryId(): Promise<string | null> {
+  if (investCategoryId !== undefined) return Promise.resolve(investCategoryId)
+  pendingResolve ??= doResolveCategory().finally(() => { pendingResolve = null })
+  return pendingResolve
+}
+
+async function doResolveCategory(): Promise<string | null> {
   try {
     const cats = await categoryRepo.list()
     const found = cats.find(c => c.name === '投资')
@@ -30,9 +36,15 @@ async function investmentCategoryId(): Promise<string | null> {
     investCategoryId = created.id
     return investCategoryId
   } catch {
-    investCategoryId = null
+    // 失败不缓存 (保持 undefined), 下次同步自动重试
     return null
   }
+}
+
+/** 用户切换/登出时重置模块级缓存, 防止 categoryId 跨用户泄漏 */
+export function resetInvestCategoryCache(): void {
+  investCategoryId = undefined
+  pendingResolve = null
 }
 
 export interface InvestTxnInput {
@@ -51,20 +63,16 @@ export async function syncInvestToLedger(input: InvestTxnInput): Promise<boolean
     if (!(input.amountFen > 0)) return false
     const categoryId = await investmentCategoryId()
     if (!categoryId) return false
-    const now = Date.now()
     await transactionRepo.add({
-      id: newId(),
       date: input.date,
       type: input.side === 'buy' ? 'expense' : 'income',
       amount: input.amountFen,
       categoryId,
-      note: input.note,
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null
+      note: input.note
     })
     return true
-  } catch {
+  } catch (e) {
+    console.warn('[ledger-sync] 同步失败:', input.note, e)
     return false
   }
 }

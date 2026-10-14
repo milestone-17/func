@@ -43,7 +43,7 @@ describe('定投模拟矩阵 · 档位判定', () => {
 })
 
 describe('定投模拟矩阵 · 建议金额', () => {
-  const cfg = { weeklySplits: [20000, 30000, 25000, 25000] } // 分
+  const cfg = { weeklySplits: [20000, 30000, 25000, 25000] as [number, number, number, number] } // 分
 
   it('均匀势 (dev=0): 建议额 = 计划分扣', () => {
     for (const w of [1, 2, 3, 4] as const) {
@@ -89,7 +89,7 @@ describe('定投模拟矩阵 · 建议金额', () => {
     // 用整数 ma250 精确构造偏离, 避免浮点误差
     const maMatrix = [40, 75, 100, 115, 200]
     for (const splits of splitMatrix) {
-      const c = { weeklySplits: splits }
+      const c = { weeklySplits: splits as [number, number, number, number] }
       for (let d = 0; d < devMatrix.length; d++) {
         const close = 100
         const ma250 = maMatrix[d]
@@ -118,7 +118,7 @@ describe('定投模拟矩阵 · 日期语义', () => {
 
   it('跨月模拟: 4 周全部执行后月合计 = Σ(分扣×档位系数)', () => {
     const splits = [20000, 20000, 20000, 20000]
-    const cfg = { weeklySplits: splits }
+    const cfg = { weeklySplits: splits as [number, number, number, number] }
     // 模拟一个月内价格从高位回落到低位
     const scenarios: Array<{ dev: number }> = [
       { dev: 20 },  // W1: 高位 0.4

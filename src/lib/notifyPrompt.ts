@@ -62,25 +62,57 @@ export function dismissPermanently(ls: Pick<Storage, 'setItem'> = globalThis.loc
 }
 
 
-// ---------------------------------------------------------------- 首次登录欢迎提示
+// ---------------------------------------------------------------- 邮箱注册用户通知功能介绍/欢迎
 
 export const WELCOME_SEEN_KEY = 'notify-welcome-seen'
 
 /**
- * 邮箱注册用户是否显示"已开启每日通知"欢迎条:
- *   - 仅 provider=email 且有真实邮箱 (非 @guest.local)
- *   - 未看过 (localStorage 无 WELCOME_SEEN_KEY)
- * guest/github 等其他登录走原 needsEmailPrompt 横幅, 不显示欢迎条
+ * 是否为邮箱注册的真实邮箱用户 (介绍/欢迎弹窗的目标人群)
  */
-export function shouldShowWelcome(args: {
-  user: PromptUserLike | null | undefined
-  localStorage?: Pick<Storage, 'getItem'>
-}): boolean {
-  const { user } = args
+function isRealEmailUser(user: PromptUserLike | null | undefined): boolean {
   if (!user) return false
   if (user.provider !== 'email') return false
   const email = (user.email || '').trim()
-  if (!email || /@guest\.local$/i.test(email)) return false
+  return !!email && !/@guest\.local$/i.test(email)
+}
+
+/**
+ * 邮箱注册 + 通知未开启 → 显示"通知功能介绍"弹窗:
+ *   告知有邮件通知能力, 引导去设置开启; 支持此次关闭/永久关闭。
+ *   - 永久关闭 / 此次关闭 → 不显示
+ *   - 通知已开启 → 不显示 (走 shouldShowWelcome 欢迎弹窗)
+ */
+export function shouldShowEmailIntro(args: {
+  user: PromptUserLike | null | undefined
+  notifyEmailSaved: boolean
+  sessionStorage?: Pick<Storage, 'getItem'>
+  localStorage?: Pick<Storage, 'getItem'>
+}): boolean {
+  const { user, notifyEmailSaved } = args
+  if (!isRealEmailUser(user)) return false
+  if (notifyEmailSaved) return false
+  const ss = args.sessionStorage ?? globalThis.sessionStorage
+  const ls = args.localStorage ?? globalThis.localStorage
+  try {
+    if (ls?.getItem(DISMISS_PERMANENT_KEY) === '1') return false
+    if (ls?.getItem(WELCOME_SEEN_KEY) === '1') return false
+    if (ss?.getItem(DISMISS_SESSION_KEY) === '1') return false
+  } catch { /* 存储不可用 → 显示 */ }
+  return true
+}
+
+/**
+ * 邮箱注册 + 通知已开启 → 显示"已开启通知"欢迎弹窗 (仅一次, markWelcomeSeen 后不再)。
+ * notifyOn=true 前置: 未开启通知的用户属于介绍弹窗的人群, 不得落入欢迎弹窗
+ * (否则介绍弹窗被"此次关闭"后, 同一会话内会串场成欢迎弹窗)。
+ */
+export function shouldShowWelcome(args: {
+  user: PromptUserLike | null | undefined
+  notifyOn?: boolean
+  localStorage?: Pick<Storage, 'getItem'>
+}): boolean {
+  if (!isRealEmailUser(args.user)) return false
+  if (args.notifyOn !== true) return false
   const ls = args.localStorage ?? globalThis.localStorage
   try {
     return ls?.getItem(WELCOME_SEEN_KEY) !== '1'
@@ -89,7 +121,7 @@ export function shouldShowWelcome(args: {
   }
 }
 
-/** 标记欢迎条已看过 (永久) */
+/** 标记欢迎弹窗已看过 (永久) */
 export function markWelcomeSeen(ls: Pick<Storage, 'setItem'> = globalThis.localStorage): void {
   try {
     ls?.setItem(WELCOME_SEEN_KEY, '1')

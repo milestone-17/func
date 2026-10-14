@@ -1,5 +1,5 @@
 /**
- * 指数行情多源抓取 (腾讯主 → 东财备 → Yahoo 备)
+ * 指数行情多源抓取 (腾讯主 → 东财备 → Yahoo 备 → 雪球终备)
  *
  * 指数映射:
  *   ^NDX  → 腾讯 usNDX (纳斯达克100) / 东财 100.NDX (综合指数, 口径不符仅兜底) / Yahoo ^NDX
@@ -7,15 +7,18 @@
  * 输出统一: [{ symbol, date, data: {symbol,name,date,close} }] 并标注 source
  */
 
-export type SourceId = 'tencent' | 'eastmoney' | 'yahoo'
+import { fetchXqDailyBars } from './xueqiu'
+
+export type SourceId = 'tencent' | 'eastmoney' | 'yahoo' | 'xueqiu'
 
 export const SOURCE_LABELS: Record<SourceId, string> = {
   tencent: '腾讯',
   eastmoney: '东财',
-  yahoo: 'Yahoo'
+  yahoo: 'Yahoo',
+  xueqiu: '雪球'
 }
 
-export const SOURCE_PRIORITY: SourceId[] = ['tencent', 'eastmoney', 'yahoo']
+export const SOURCE_PRIORITY: SourceId[] = ['tencent', 'eastmoney', 'yahoo', 'xueqiu']
 
 interface Bar { date: string; close: number }
 export interface SourceResult {
@@ -130,10 +133,22 @@ async function fromYahoo(def: IndexDef): Promise<Bar[]> {
   return bars
 }
 
+/** 雪球指数 symbol 映射 (.SPX 雪球不收录, 抛错走下一源) */
+const XQ_MAP: Record<string, string> = { '^NDX': '.NDX', '^GSPC': '.SPX' }
+
+async function fromXueqiu(def: IndexDef): Promise<Bar[]> {
+  const sym = XQ_MAP[def.symbol]
+  if (!sym) throw new Error(`雪球不支持 ${def.symbol}`)
+  const bars = await fetchXqDailyBars(sym, 660)
+  if (bars.length < 400) throw new Error(`雪球数据不足: ${bars.length}`)
+  return bars
+}
+
 const FETCHERS: Record<SourceId, (def: IndexDef) => Promise<Bar[]>> = {
   tencent: fromTencent,
   eastmoney: fromEastmoney,
-  yahoo: fromYahoo
+  yahoo: fromYahoo,
+  xueqiu: fromXueqiu
 }
 
 const NAMES: Record<string, string> = {
@@ -145,6 +160,35 @@ const SYMBOLS: IndexDef[] = [
   { symbol: '^NDX', name: NAMES['^NDX'] },
   { symbol: '^GSPC', name: NAMES['^GSPC'] }
 ]
+
+// ---------- 源健康记录 (模块级, 进程内) ----------
+
+interface SourceHealth {
+  lastOkAt: number | null
+  lastFailAt: number | null
+  failStreak: number
+}
+
+const health = new Map<string, SourceHealth>()
+
+export function recordSourceHealth(source: string, ok: boolean): void {
+  const h = health.get(source) || { lastOkAt: null, lastFailAt: null, failStreak: 0 }
+  const now = Date.now()
+  if (ok) {
+    h.lastOkAt = now
+    h.failStreak = 0
+  } else {
+    h.lastFailAt = now
+    h.failStreak += 1
+  }
+  health.set(source, h)
+}
+
+export function getSourceHealthSnapshot(): Record<string, { lastOkAt: number | null; lastFailAt: number | null; failStreak: number }> {
+  const snap: Record<string, { lastOkAt: number | null; lastFailAt: number | null; failStreak: number }> = {}
+  for (const [k, v] of health) snap[k] = { ...v }
+  return snap
+}
 
 /**
  * 多源带兜底抓取: 按 priority 顺序尝试全部指数, 返回第一个成功源的全量结果。
@@ -173,6 +217,7 @@ export async function fetchWithFallback(priority: SourceId[] = SOURCE_PRIORITY):
         break
       }
     }
+    recordSourceHealth(source, allOk && rows.length > 0)
     if (allOk && rows.length > 0) return { rows, source }
   }
   return null

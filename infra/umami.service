@@ -1,0 +1,18 @@
+[Unit]
+Description=Umami Web Analytics
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/workspace/umami
+EnvironmentFile=/home/ubuntu/workspace/umami/.env
+# start-env 会读取 .env 同时保留构建期 BASE_PATH
+ExecStart=/usr/bin/pnpm run start-env
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+

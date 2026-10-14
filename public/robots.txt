@@ -1,0 +1,66 @@
+User-agent: *
+Allow: /func/
+Allow: /func/login
+Disallow: /func/ledger
+Disallow: /func/budget
+Disallow: /func/portfolio
+Disallow: /func/watch
+Disallow: /func/holding
+Disallow: /func/permanent
+Disallow: /func/dca
+Disallow: /func/suggest
+Disallow: /func/channel
+Disallow: /func/reports
+Disallow: /func/settings
+Disallow: /func/admin
+
+User-agent: GPTBot
+Allow: /func/
+Allow: /func/login
+Disallow: /func/ledger
+Disallow: /func/budget
+Disallow: /func/portfolio
+Disallow: /func/watch
+Disallow: /func/holding
+Disallow: /func/permanent
+Disallow: /func/dca
+Disallow: /func/suggest
+Disallow: /func/channel
+Disallow: /func/reports
+Disallow: /func/settings
+Disallow: /func/admin
+
+User-agent: ClaudeBot
+Allow: /func/
+Allow: /func/login
+Disallow: /func/ledger
+Disallow: /func/budget
+Disallow: /func/portfolio
+Disallow: /func/watch
+Disallow: /func/holding
+Disallow: /func/permanent
+Disallow: /func/dca
+Disallow: /func/suggest
+Disallow: /func/channel
+Disallow: /func/reports
+Disallow: /func/settings
+Disallow: /func/admin
+
+User-agent: PerplexityBot
+Allow: /func/
+Allow: /func/login
+Disallow: /func/ledger
+Disallow: /func/budget
+Disallow: /func/portfolio
+Disallow: /func/watch
+Disallow: /func/holding
+Disallow: /func/permanent
+Disallow: /func/dca
+Disallow: /func/suggest
+Disallow: /func/channel
+Disallow: /func/reports
+Disallow: /func/settings
+Disallow: /func/admin
+
+Sitemap: https://milestoneluo.top/sitemap.xml
+

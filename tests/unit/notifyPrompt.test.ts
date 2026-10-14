@@ -140,41 +140,41 @@ describe('shouldShowWelcome (邮箱注册首次登录欢迎条)', () => {
   const githubUser = { email: 'dev@users.noreply.github.com', provider: 'github' }
 
   it('邮箱注册 + 未看过 → 显示', () => {
-    expect(shouldShowWelcome({ user: emailUser, localStorage: ls })).toBe(true)
+    expect(shouldShowWelcome({ notifyOn: true, user: emailUser, localStorage: ls })).toBe(true)
   })
   it('已看过 (WELCOME_SEEN_KEY=1) → 不显示', () => {
     ls.setItem(WELCOME_SEEN_KEY, '1')
-    expect(shouldShowWelcome({ user: emailUser, localStorage: ls })).toBe(false)
+    expect(shouldShowWelcome({ notifyOn: true, user: emailUser, localStorage: ls })).toBe(false)
   })
   it('guest → 不显示 (走原填写提醒)', () => {
-    expect(shouldShowWelcome({ user: guestUser, localStorage: ls })).toBe(false)
+    expect(shouldShowWelcome({ notifyOn: true, user: guestUser, localStorage: ls })).toBe(false)
   })
   it('github 登录 → 不显示', () => {
-    expect(shouldShowWelcome({ user: githubUser, localStorage: ls })).toBe(false)
+    expect(shouldShowWelcome({ notifyOn: true, user: githubUser, localStorage: ls })).toBe(false)
   })
   it('provider=email 但 @guest.local 假邮箱 → 不显示', () => {
-    expect(shouldShowWelcome({ user: { email: 'g@guest.local', provider: 'email' }, localStorage: ls })).toBe(false)
+    expect(shouldShowWelcome({ notifyOn: true, user: { email: 'g@guest.local', provider: 'email' }, localStorage: ls })).toBe(false)
   })
   it('provider=email 但空邮箱 → 不显示', () => {
-    expect(shouldShowWelcome({ user: { email: '', provider: 'email' }, localStorage: ls })).toBe(false)
+    expect(shouldShowWelcome({ notifyOn: true, user: { email: '', provider: 'email' }, localStorage: ls })).toBe(false)
   })
   it('null/undefined 用户 → 不显示', () => {
-    expect(shouldShowWelcome({ user: null, localStorage: ls })).toBe(false)
-    expect(shouldShowWelcome({ user: undefined, localStorage: ls })).toBe(false)
+    expect(shouldShowWelcome({ notifyOn: true, user: null, localStorage: ls })).toBe(false)
+    expect(shouldShowWelcome({ notifyOn: true, user: undefined, localStorage: ls })).toBe(false)
   })
   it('存储抛异常 → 显示 (按首次处理)', () => {
     const badLs = { getItem: () => { throw new Error('unavailable') } }
-    expect(shouldShowWelcome({ user: emailUser, localStorage: badLs })).toBe(true)
+    expect(shouldShowWelcome({ notifyOn: true, user: emailUser, localStorage: badLs })).toBe(true)
   })
 })
 
 describe('markWelcomeSeen', () => {
   it('标记后 shouldShowWelcome → false', () => {
     const emailUser = { email: 'real2@example.com', provider: 'email' }
-    expect(shouldShowWelcome({ user: emailUser, localStorage: ls })).toBe(true)
+    expect(shouldShowWelcome({ notifyOn: true, user: emailUser, localStorage: ls })).toBe(true)
     markWelcomeSeen(ls)
     expect(ls.getItem(WELCOME_SEEN_KEY)).toBe('1')
-    expect(shouldShowWelcome({ user: emailUser, localStorage: ls })).toBe(false)
+    expect(shouldShowWelcome({ notifyOn: true, user: emailUser, localStorage: ls })).toBe(false)
   })
   it('存储抛异常不外溢', () => {
     const badLs = { setItem: () => { throw new Error('unavailable') } }

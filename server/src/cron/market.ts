@@ -1,6 +1,7 @@
 import cron from 'node-cron'
 import { prisma } from '../lib/prisma'
 import { fetchWithFallback, SOURCE_PRIORITY, type SourceId } from '../lib/market-fetcher'
+import { loadPriorityFromDb } from '../lib/source-config'
 
 let retryTimer: NodeJS.Timeout | null = null
 let currentPriority: SourceId[] = [...SOURCE_PRIORITY]
@@ -48,7 +49,21 @@ function scheduleRetry(): void {
   }, 30 * 60 * 1000)
 }
 
+/** 启动时从数据库恢复持久化的源优先级 (失败不阻塞启动) */
+export async function restorePriorityFromDb(): Promise<void> {
+  try {
+    const saved = await loadPriorityFromDb()
+    if (saved) {
+      setSourcePriority(saved as SourceId[])
+      console.log('[market] 优先级已从数据库恢复: ' + saved.join(','))
+    }
+  } catch (e) {
+    console.warn('[market] 恢复源优先级失败: ' + ((e as Error).message || e))
+  }
+}
+
 export function startMarketCron(): void {
+  void restorePriorityFromDb()
   // UTC 22:17 周一~周五 ≈ 北京时间交易日次日 06:17 (美股收盘后)
   cron.schedule('17 22 * * 1-5', () => {
     syncMarketNow()

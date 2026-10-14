@@ -101,25 +101,26 @@ describe('独立后台 panel (admin_token)', () => {
     const body = res.json() as { users: { total: number }; market: { sourcePriority: string[] } }
     expect(body.users.total).toBeGreaterThanOrEqual(2)
     expect(Array.isArray(body.market.sourcePriority)).toBe(true)
-    expect(body.market.sourcePriority.length).toBe(3)
+    expect(body.market.sourcePriority.length).toBe(4)
+    expect(body.market.sourcePriority).toContain('xueqiu')
   })
 
   it('源优先级: 全排列保存生效, 非全排列 400', async () => {
     const ok = await app.inject({
       method: 'POST', url: '/api/admin/panel/source-priority',
       cookies: panelCookie(),
-      payload: { priority: ['eastmoney', 'tencent', 'yahoo'] }
+      payload: { priority: ['eastmoney', 'tencent', 'yahoo', 'xueqiu'] }
     })
     expect(ok.statusCode).toBe(200)
-    expect(ok.json().priority).toEqual(['eastmoney', 'tencent', 'yahoo'])
+    expect(ok.json().priority).toEqual(['eastmoney', 'tencent', 'yahoo', 'xueqiu'])
     // summary 里也生效
     const s = await app.inject({ method: 'GET', url: '/api/admin/panel/summary', cookies: panelCookie() })
-    expect(s.json().market.sourcePriority).toEqual(['eastmoney', 'tencent', 'yahoo'])
+    expect(s.json().market.sourcePriority).toEqual(['eastmoney', 'tencent', 'yahoo', 'xueqiu'])
     // 恢复默认
     await app.inject({
       method: 'POST', url: '/api/admin/panel/source-priority',
       cookies: panelCookie(),
-      payload: { priority: ['tencent', 'eastmoney', 'yahoo'] }
+      payload: { priority: ['tencent', 'eastmoney', 'yahoo', 'xueqiu'] }
     })
     const bad = await app.inject({
       method: 'POST', url: '/api/admin/panel/source-priority',

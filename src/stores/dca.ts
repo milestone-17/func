@@ -305,12 +305,12 @@ export const useDcaStore = defineStore('dca', () => {
     states.value = { ...states.value, [symbol]: { ...st, bucket: newBucket, suggestions: newSug } }
   }
 
-  async function recordExecution(weekIndex: 1 | 2 | 3 | 4, executedAmount: number, actualPrice?: number) {
+  async function recordExecution(weekIndex: 1 | 2 | 3 | 4, executedAmount: number, actualPrice?: number): Promise<{ ok: boolean; reason?: string }> {
     const symbol = activeSymbol.value
     const st = states.value[symbol]
-    if (!st?.config) return
+    if (!st?.config) return { ok: false, reason: 'no-config' }
     const close = lastCloseOf(symbol)
-    if (close == null) return
+    if (close == null) return { ok: false, reason: 'no-price' }
     const today = todayISO()
     const month = today.slice(0, 7)
     const sug = st.suggestions[weekIndex]
@@ -366,6 +366,7 @@ export const useDcaStore = defineStore('dca', () => {
         }
       }
     }
+    return { ok: true }
   }
 
   /**
@@ -392,9 +393,13 @@ export const useDcaStore = defineStore('dca', () => {
       // 切到 active symbol 让 recordExecution 用正确的 config
       const prev = activeSymbol.value
       activeSymbol.value = symbol
-      await recordExecution(wk, sug.suggestedAmount)
+      const res = await recordExecution(wk, sug.suggestedAmount)
       activeSymbol.value = prev
-      executed.push({ symbol, weekIndex: wk, amount: sug.suggestedAmount })
+      if (res.ok) {
+        executed.push({ symbol, weekIndex: wk, amount: sug.suggestedAmount })
+      } else {
+        skipped.push({ symbol, weekIndex: wk, reason: res.reason ?? 'unknown' })
+      }
     }
     return { executed, skipped }
   }

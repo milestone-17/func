@@ -7,12 +7,13 @@
  * 天然全部已确认, 存量数据零迁移。
  */
 
-/** 把 ISO 日期按交易日推进 n 天, 跳过周六周日, 返回 ISO 日期 */
+/** 把 ISO 日期按交易日推进 n 天 (n 可为负, 回退), 跳过周六日, 返回 ISO 日期 */
 export function addTradingDays(dateISO: string, n: number): string {
   const d = parseDate(dateISO)
+  const step = n >= 0 ? 1 : -1
   let added = 0
-  while (added < n) {
-    d.setUTCDate(d.getUTCDate() + 1)
+  while (added < Math.abs(n)) {
+    d.setUTCDate(d.getUTCDate() + step)
     const dow = d.getUTCDay()
     if (dow === 0 || dow === 6) continue // 周日/周六
     added++

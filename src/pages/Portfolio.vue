@@ -74,7 +74,7 @@
               <button @click.stop="toggleKline(h.symbol)" :class="['rounded-md px-1.5 py-0.5 text-[10px] font-medium transition', klineExpanded === h.symbol ? 'bg-brand text-white' : 'bg-brand-soft text-brand']" title="点击查看K线">K线</button>
               <span v-if="h.category !== 'other'" class="rounded-md bg-brand-soft px-1.5 py-0.5 text-[10px] text-brand">{{ categoryLabel(h.category) }}</span>
             </div>
-            <div class="mt-0.5 text-[11px] text-ink3">{{ marketLabel(h.market) }} · {{ currencyLabel(h.currency) }} · T+{{ h.settleDays || 0 }}</div>
+            <div class="mt-0.5 text-[11px] text-ink3">{{ marketLabel(h.market) }} · {{ currencyLabel(h.currency) }} · {{ h.settleDays === 0 ? '今日确认' : 'T+' + h.settleDays }}</div>
           </button>
           <button @click="askDelete(h.id)" class="text-ink3 hover:text-neg p-1" aria-label="删除">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -258,8 +258,17 @@
                 买入确认中
               </button>
             </div>
+            <div v-if="!form.settled" class="mt-2">
+              <label class="label">到账时间</label>
+              <div class="flex gap-1.5">
+                <button v-for="opt in settleOptions" :key="opt.value" type="button" @click="form.settleChoice = opt.value"
+                  :class="['flex-1 rounded-lg py-2 text-xs font-medium', form.settleChoice === opt.value ? 'bg-brand text-white' : 'bg-surface2 text-ink2']">
+                  {{ opt.label }}
+                </button>
+              </div>
+            </div>
             <div class="mt-1 text-[11px] text-ink3">
-              {{ form.settled ? '之前买入的份额已到手, 立即计入数量/均价' : '今天刚买入, T+1/T+2 到账后自动计入数量 (期间显示"确认中")' }}
+              {{ form.settled ? '之前买入的份额已到手, 立即计入数量/均价' : settleHint }}
             </div>
           </div>
           <div v-if="saveError" class="text-xs text-neg">{{ saveError }}</div>
@@ -495,8 +504,23 @@ async function retryWeekMa(h: HoldingView) {
 }
 
 const creating = ref(false)
-const form = ref<{ symbol: string; name: string; market: Market; type: HoldingType; category: HoldingCategory; currency: Currency; avgCost: number | null; quantity: number; settled: boolean }>({
-  symbol: '', name: '', market: 'US', type: 'etf', category: 'other', currency: 'USD', avgCost: null, quantity: 0, settled: true
+const form = ref<{ symbol: string; name: string; market: Market; type: HoldingType; category: HoldingCategory; currency: Currency; avgCost: number | null; quantity: number; settled: boolean; settleChoice: 0 | 1 | 2 | null }>({
+  symbol: '', name: '', market: 'US', type: 'etf', category: 'other', currency: 'USD', avgCost: null, quantity: 0, settled: true, settleChoice: null
+})
+
+/** 到账时间选项: 0=今日确认 (当天买入当天可交易), 1=T+1, 2=T+2; null=按基金类型自动推断 */
+const settleOptions = [
+  { label: '今日', value: 0 as const },
+  { label: 'T+1', value: 1 as const },
+  { label: 'T+2', value: 2 as const }
+]
+const AUTO_SETTLE_LABEL = '按基金类型自动推断'
+
+const settleHint = computed(() => {
+  if (form.value.settled) return '之前买入的份额已到手, 立即计入数量/均价'
+  const d = form.value.settleChoice
+  if (d == null) return `到账时间${AUTO_SETTLE_LABEL} (${suggestSettleDays(form.value.name) >= 2 ? 'T+2' : 'T+1'}), 到账后自动计入数量 (期间显示"确认中")`
+  return d === 0 ? '今日买入今日确认, 立即计入数量/均价' : `T+${d} 到账后自动计入数量 (期间显示"确认中")`
 })
 const canSave = computed(() => !!form.value.symbol && !!form.value.name && form.value.avgCost != null && form.value.quantity > 0)
 
@@ -585,7 +609,7 @@ async function resolveSymbol() {
 }
 
 function openCreate() {
-  form.value = { symbol: '', name: '', market: 'US', type: 'etf', category: 'other', currency: 'USD', avgCost: null, quantity: 0, settled: true }
+  form.value = { symbol: '', name: '', market: 'US', type: 'etf', category: 'other', currency: 'USD', avgCost: null, quantity: 0, settled: true, settleChoice: null }
   categoryTouched.value = false
   resolving.value = false
   resolveMsg.value = ''
@@ -612,17 +636,19 @@ async function save() {
   saveError.value = ''
   try {
     const currency: Currency = form.value.market === 'US' ? 'USD' : 'CNY'
+    // 到账时间: 用户显式选择 (今日/T+1/T+2) 优先, 未选则按基金类型自动推断
+    const autoDays = suggestSettleDays(form.value.name)
+    const settleDays = form.value.settled ? autoDays : (form.value.settleChoice ?? autoDays)
     const holding = await portfolio.addHolding({
       symbol: form.value.symbol.trim(), name: form.value.name.trim(), market: form.value.market,
       currency, type: form.value.type, category: form.value.category, quantity: form.value.quantity, avgCost: form.value.avgCost!,
-      currentPrice: null, currentPriceAt: null
+      currentPrice: null, currentPriceAt: null,
+      settleDays: form.value.settled ? undefined : settleDays
     })
-    // 买入日期决定结算: 已确认 → 回退足够多的交易日 (历史买入, 立即计入数量);
-    // 确认中 → 今天 (T+1/T+2 到账后自动计入)。多退 3 个交易日覆盖长假近似。
-    const settleDays = suggestSettleDays(form.value.name)
-    const buyDate = form.value.settled
-      ? addTradingDays(new Date().toISOString().slice(0, 10), -(Math.max(settleDays, 1) + 3))
-      : new Date().toISOString().slice(0, 10)
+    const today = new Date().toISOString().slice(0, 10)
+    const buyDate = form.value.settled || settleDays === 0
+      ? addTradingDays(today, -(Math.max(autoDays, 1) + 3))
+      : today
     await portfolio.addTxn({
       holdingId: holding.id, side: 'buy', date: buyDate,
       price: form.value.avgCost!, quantity: form.value.quantity, fee: 0

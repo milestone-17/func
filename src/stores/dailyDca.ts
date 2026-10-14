@@ -63,7 +63,7 @@ export const useDailyDcaStore = defineStore('dailyDca', () => {
     await holdingTxnRepo.add(r.txn)
     // 同步账本: 每日定投买入 = 现金流出
     await syncInvestToLedger({
-      amountFen: r.txn.quantity * r.txn.price,
+      amountFen: (r.txn.quantity ?? 0) * (r.txn.price ?? 0),
       side: 'buy',
       date: r.txn.date,
       note: `每日定投 ${holdingNote(holding?.name, holding?.symbol ?? '')}`

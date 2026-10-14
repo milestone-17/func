@@ -171,6 +171,9 @@
           </div>
         </section>
 
+        <!-- 15 年策略回测 -->
+        <BacktestCard strategy="a" :current-secid="dca.activeSymbol" :current-name="label(dca.activeSymbol)" />
+
         <!-- 4 周建议 -->
         <section>
           <div class="flex items-center justify-between px-1 mb-2">
@@ -265,6 +268,7 @@ import { useRoute } from 'vue-router'
 import AppShell from '@/components/AppShell.vue'
 import Badge from '@/components/Badge.vue'
 import LineChart from '@/components/LineChart.vue'
+import BacktestCard from '@/components/BacktestCard.vue'
 import DcaSuggestionCard from '@/components/DcaSuggestionCard.vue'
 import DailyDcaCard from '@/components/DailyDcaCard.vue'
 import { useDcaStore, DCA_LABELS, isFundSymbol, fundCodeOf } from '@/stores/dca'

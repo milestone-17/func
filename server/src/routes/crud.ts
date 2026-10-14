@@ -85,8 +85,10 @@ export async function crudRoutes(app: FastifyInstance): Promise<void> {
     if (!body.id || typeof body.id !== 'string') return reply.code(400).send({ error: '缺少 id' })
     const model = prisma[def.model as keyof typeof prisma] as any
     // 属主校验: id 已被其他用户占用 → 拒绝 (防跨用户数据劫持)
-    const owner = await model.findUnique({ where: { id: body.id }, select: { userId: true } })
-    if (owner && owner.userId !== req.userId) return reply.code(409).send({ error: '该 id 已存在' })
+    const owner = await model.findUnique({ where: { id: body.id }, select: { userId: true, deletedAt: true } })
+    if (owner && owner.userId !== req.userId && !owner.deletedAt) {
+      return reply.code(409).send({ error: '该 id 已存在' })
+    }
     if (def.flat) {
       const now = new Date()
       const created = await model.upsert({
@@ -105,10 +107,11 @@ export async function crudRoutes(app: FastifyInstance): Promise<void> {
       return { item: created }
     }
     const row = baseData(resource, req.userId!, body.id, body)
+    const takeover = !!(owner && owner.userId !== req.userId)
     const created = await model.upsert({
       where: { id: body.id },
       create: row,
-      update: { ...row, id: undefined }
+      update: takeover ? { ...row, id: undefined } : { ...row, id: undefined, userId: undefined }
     })
     return { item: created.data }
   })

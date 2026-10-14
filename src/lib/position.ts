@@ -75,12 +75,13 @@ export function computePosition(
 
 /**
  * 解析某持仓的结算天数:
- * - 显式配置 (settleDays>0) 优先;
+ * - 显式配置优先 (settleDays != null, 含 0=今日确认/即时结算);
  * - 未配置时按 6 位基金代码 / CN 基金 → 1 (T+1), 其余 → 0 (即时)。
  * 存量美股持仓无配置 → 0, 行为零变化。
  */
 export function settleDaysOf(h: { settleDays?: number | null; symbol: string; type: string; market: string }): number {
-  if (h.settleDays != null && h.settleDays > 0) return h.settleDays
+  // 显式配置优先 (含 0=今日确认/即时结算 — 用户新建持仓时可选)
+  if (h.settleDays != null) return h.settleDays
   if (/^\d{6}$/.test(h.symbol) || h.market === 'CN') return 1
   return 0
 }

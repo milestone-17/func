@@ -109,8 +109,8 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   }
 
   async function addHolding(input: Omit<Holding, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>): Promise<Holding> {
-    // 新建基金/持仓默认结算天数: 名称含跨境关键词 → T+2, 其余基金 → T+1, 非基金即时(0)
-    const settleDays = input.settleDays != null && input.settleDays > 0
+    // 新建基金/持仓默认结算天数: 显式传入 (含 0=今日) 优先; 未传按 名称含跨境关键词 → T+2, 其余基金 → T+1, 非基金即时(0)
+    const settleDays = input.settleDays != null
       ? input.settleDays
       : (/^\d{6}$/.test(input.symbol) || input.market === 'CN') ? suggestSettleDays(input.name) : 0
     const h = await holdingRepo.add({ ...input, settleDays })

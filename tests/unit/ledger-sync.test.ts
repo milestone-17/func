@@ -16,7 +16,7 @@ vi.mock('@/repos/categoryRepo', () => ({
 }))
 vi.mock('@/repos/base', () => ({ newId: () => 'test-uuid-' + Math.random().toString(36).slice(2, 8) }))
 
-import { syncInvestToLedger, holdingNote } from '@/lib/ledger-sync'
+import { holdingNote } from '@/lib/ledger-sync'
 
 describe('投资 → 账本同步', () => {
   beforeEach(() => {

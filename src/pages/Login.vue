@@ -65,6 +65,7 @@ async function submit(): Promise<void> {
       await auth.login(email.value, password.value)
     } else if (mode.value === 'register') {
       await auth.register(email.value, password.value, code.value)
+      ;(window as any).umami?.track('register')
     } else {
       await auth.resetPassword(email.value, code.value, password.value)
       switchMode('login')
@@ -91,6 +92,7 @@ async function guest(): Promise<void> {
   error.value = ''
   try {
     await auth.guestLogin()
+    ;(window as any).umami?.track('guest_start')
     router.push(redirectPath())
   } catch (e) {
     error.value = (e as Error).message

@@ -36,12 +36,12 @@
         <span v-for="(m, i) in maRows" :key="m.p" :style="{ color: MA_COLORS[i] }">
           MA{{ m.p }} {{ m.v != null ? m.v.toFixed(2) : '--' }}
         </span>
-        <span v-if="benchOn" class="text-orange-400">沪深300 {{ benchChg >= 0 ? '+' : '' }}{{ benchChg.toFixed(2) }}%</span>
+        <span v-if="benchOn && benchChg != null" class="text-orange-400">沪深300 {{ benchChg >= 0 ? '+' : '' }}{{ benchChg.toFixed(2) }}%</span>
       </template>
       <template v-else>
         <span class="text-ink3">净值走势</span>
         <span v-if="navChg != null" :class="navChg >= 0 ? 'text-pos' : 'text-neg'">{{ navChg >= 0 ? '+' : '' }}{{ navChg.toFixed(2) }}%</span>
-        <span v-if="benchOn" class="text-orange-400">沪深300 {{ benchChg >= 0 ? '+' : '' }}{{ benchChg.toFixed(2) }}%</span>
+        <span v-if="benchOn && benchChg != null" class="text-orange-400">沪深300 {{ benchChg >= 0 ? '+' : '' }}{{ benchChg.toFixed(2) }}%</span>
         <span v-else-if="showBench" class="text-ink3">沪深300 加载中…</span>
       </template>
     </div>

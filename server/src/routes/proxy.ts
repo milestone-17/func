@@ -1,5 +1,8 @@
 import { FastifyInstance } from 'fastify'
 import { requireAuth } from '../plugins/auth'
+import { fetchFundQuotesFromFundgz } from '../lib/fundgz'
+import { fetchLiveQuotes, getSourceHealth, isValidLiveCode } from '../lib/live-quote'
+import { fetchXqQuotes, fetchXqDailyBars } from '../lib/xueqiu'
 
 /**
  * 行情代理接口 (服务端转发东财/Yahoo, 内存缓存)
@@ -189,24 +192,52 @@ export async function fetchTencentUsDaily(symbol: string): Promise<Array<{ date:
 }
 
 export async function proxyRoutes(app: FastifyInstance): Promise<void> {
+  // 实时行情多源 (新浪→腾讯→东财 逐源兜底; 15s 缓存)
+  app.get('/api/market/live-quotes', { preHandler: requireAuth }, async (req, reply) => {
+    const { codes } = (req.query || {}) as { codes?: string }
+    if (!codes || !codes.trim()) return reply.code(400).send({ error: 'codes 参数不合法' })
+    const list = [...new Set(codes.split(',').map(c => c.trim()).filter(Boolean))]
+    if (!list.length || list.length > 50 || !list.every(isValidLiveCode)) return reply.code(400).send({ error: 'codes 参数不合法' })
+    const key = `live:${[...list].sort().join(',')}`
+    const data = await cached(key, 15_000, () => fetchLiveQuotes(list))
+    return { ...data, sources: getSourceHealth() }
+  })
+
   // 基金净值批量 (60s 缓存)
   app.get('/api/market/fund-quotes', { preHandler: requireAuth }, async (req, reply) => {
     const { codes } = (req.query || {}) as { codes?: string }
     const list = (codes || '').split(',').map(c => c.trim()).filter(c => /^\d{6}$/.test(c)).slice(0, 50)
     if (!list.length) return reply.code(400).send({ error: 'codes 参数不合法' })
+    let rows: FundQuoteRow[] = []
     try {
-      let rows = await cached(`fund:${list.join(',')}`, 60_000, () => fetchFundQuotesFromEm(list))
-      // 东财 FundMNFInfo 不含场内股票 → 缺失代码用腾讯实时行情补齐
-      const got = new Set(rows.map(r => r.code))
-      const missing = list.filter(c => !got.has(c))
-      if (missing.length) {
-        const extra = await fetchTxSpotQuotes(missing).catch(() => [])
-        rows = [...rows, ...extra]
-      }
-      return { items: rows }
+      rows = await cached(`fund:${list.join(',')}`, 60_000, () => fetchFundQuotesFromEm(list))
     } catch (e) {
-      return reply.code(502).send({ error: `净值拉取失败: ${(e as Error).message}` })
+      // 东财主源失败 → 天天基金 fundgz 备源逐代码抓取
+      console.warn('[fund-quotes] 东财主源失败, 切 fundgz 备源:', (e as Error).message)
+      rows = await cached(`fund:${list.join(',')}`, 60_000, () => fetchFundQuotesFromFundgz(list))
     }
+    // 东财成功但部分代码未命中 → 仅对 missing 走 fundgz 补齐
+    const got = new Set(rows.map(r => r.code))
+    const missingAfterEm = list.filter(c => !got.has(c))
+    if (missingAfterEm.length) {
+      const gz = await fetchFundQuotesFromFundgz(missingAfterEm).catch(() => [])
+      rows = [...rows, ...gz]
+    }
+    // 场内股票/ETF 不在上述基金源 → 腾讯实时行情兜底
+    const got2 = new Set(rows.map(r => r.code))
+    const spotMissing = list.filter(c => !got2.has(c))
+    if (spotMissing.length) {
+      const extra = await fetchTxSpotQuotes(spotMissing).catch(() => [])
+      rows = [...rows, ...extra]
+    }
+    // 终备: 雪球 (前三源全部未命中的代码)
+    const got3 = new Set(rows.map(r => r.code))
+    const xqMissing = list.filter(c => !got3.has(c))
+    if (xqMissing.length) {
+      const xq = await fetchXqQuotes(xqMissing).catch(() => [])
+      rows = [...rows, ...xq.map(q => ({ code: q.code, name: q.name, nav: q.price, isEstimate: false, navDate: '', source: 'xueqiu' }))]
+    }
+    return { items: rows }
   })
 
   // 指数/股票 月K (12h 缓存; 东财主源失败自动切腾讯兜底)
@@ -232,10 +263,12 @@ export async function proxyRoutes(app: FastifyInstance): Promise<void> {
       const bars = await cached(key, ttl, () => fetchYahooChart(symbol, range, interval))
       return { bars }
     } catch (e1) {
-      // Yahoo 429/失败 → 腾讯日K兜底 (等长序列, 周线由前端按 close 聚合的场景少; 腾讯仅日K)
+      // Yahoo 429/失败 → 腾讯日K兜底 → 雪球终备 (等长序列; 腾讯美股日K常为空, 雪球补位)
       try {
         const bars = await cached(`tx:${key}`, ttl, () => fetchTencentUsDaily(symbol))
         if (bars.length > 0) return { bars }
+        const xq = await cached(`xq:${key}`, ttl, () => fetchXqDailyBars(symbol, range === '5y' ? 1300 : 8))
+        if (xq.length > 0) return { bars: xq }
         throw e1
       } catch {
         return reply.code(502).send({ error: `Yahoo 拉取失败: ${(e1 as Error).message}` })
