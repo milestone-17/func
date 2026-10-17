@@ -29,6 +29,7 @@ export interface StrategyBMonthlyPoint {
   units: number         // 当月末累计份额（CNY 计价）
   value: number         // 当月末持仓市值（CNY 计价）
   wealth: number        // value + cash
+  invested: number      // 截至当月末的累计净投入（含期初本金 + 累计加仓，不扣卖出）
 }
 
 export interface StrategyBResult {
@@ -266,11 +267,12 @@ export function runStrategyB(input: StrategyBInput): StrategyBResult {
     }
 
     const value = units * mb.close
-    monthly.push({ date: mb.date, zone, cash, units, value, wealth: value + cash })
+    // invested = 期初本金 + 累计加仓（含当月），供窗口投入口径使用
+    monthly.push({ date: mb.date, zone, cash, units, value, wealth: value + cash, invested: initialCash + totalInvested })
   }
 
   return {
-    totalInvested,
+    totalInvested: initialCash + totalInvested,
     endValue: units * cnyBars[cnyBars.length - 1].close + cash,
     cashEnd: cash,
     units,

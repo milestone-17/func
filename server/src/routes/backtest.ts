@@ -158,8 +158,22 @@ export async function backtestRoutes(app: FastifyInstance): Promise<void> {
             riskFreeAnnual: 0.02
           }
         })
-        const sliced = sliceMonthly(result.monthly, window)
-        metrics = computeCoreMetrics(sliced, window === 'full' ? amountBase : (sliced[0]?.wealth ?? 0))
+        // 窗口指标与策略 A 统一为“区间独立”口径:
+        // invested 与 wealth 同步平移到窗口期初, 不再拿全区间终值当分子
+        const nPtsB = WINDOW_POINTS[window]
+        let investedAtStartB = 0
+        let wealthAtStartB = 0
+        if (nPtsB !== null && result.monthly.length >= nPtsB) {
+          const idx = result.monthly.length - nPtsB - 1
+          investedAtStartB = idx >= 0 ? result.monthly[idx].invested : 0
+          wealthAtStartB = idx >= 0 ? result.monthly[idx].wealth : 0
+        }
+        metrics = metricsForWindow(
+          result.monthly.map(p => ({ date: p.date, invested: p.invested, wealth: p.wealth })),
+          investedAtStartB,
+          window,
+          wealthAtStartB
+        )
       }
 
       const payload: BacktestPayload = {

@@ -199,9 +199,26 @@ export function metricsForWindow(
   wealthAtWindowStart = 0
 ): CoreMetrics {
   const win = sliceMonthly(monthly, window)
-  // 窗口内零投入（末累计投入未超过窗口前累计）→ 空指标
-  if (win.length === 0 || win[win.length - 1].invested <= investedAtWindowStart) {
+  if (win.length === 0) {
     return { totalInvested: 0, endValue: 0, totalReturnPct: 0, xirrPct: null, maxDrawdownPct: 0, maxDrawdownMonths: 0, annualizedVolPct: 0, sharpe: null, winRatePct: 0 }
+  }
+  const windowInvested = win[win.length - 1].invested - investedAtWindowStart
+  if (windowInvested <= 0) {
+    // 窗口内无新增投入（比如策略 B 在该窗口没触发任何买入信号）。
+    // 此时收益率分母为 0，不应输出 0%（会让人误以为“投了钱没赚”），
+    // 而是返回 totalInvested=0 + 真实资产变化，由前端按“无新增投入”展示。
+    const endValue = win[win.length - 1].wealth - wealthAtWindowStart
+    return {
+      totalInvested: 0,
+      endValue,
+      totalReturnPct: 0,
+      xirrPct: null,
+      maxDrawdownPct: 0,
+      maxDrawdownMonths: 0,
+      annualizedVolPct: 0,
+      sharpe: null,
+      winRatePct: 0
+    }
   }
   // invested 与 wealth 同步平移到窗口期初，保证两者口径一致
   const shifted = win.map(p => ({

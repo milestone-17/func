@@ -375,6 +375,62 @@ describe('metricsForWindow 区间独立口径（期末资产与投入同步平�
   })
 })
 
+// ---------------------------------------------------------------- f3. 策略B 窗口口径
+
+describe('策略B 窗口口径（区间独立，与策略A 一致）', () => {
+  // 构造策略B 形态的月度序列：期初 100000，之后每 10 个月加仓 1000，wealth 随之增长
+  const bPts = Array.from({ length: 200 }, (_, i) => {
+    const y = 2010 + Math.floor(i / 12)
+    const m = String((i % 12) + 1).padStart(2, '0')
+    const invested = 100000 + Math.floor(i / 10) * 1000
+    return { date: `${y}-${m}-28`, invested, wealth: invested * 1.05 + i * 20 }
+  })
+
+  function baseAtB(points: { invested: number; wealth: number }[], nPts: number) {
+    const idx = points.length - nPts - 1
+    return idx >= 0
+      ? { invested: points[idx].invested, wealth: points[idx].wealth }
+      : { invested: 0, wealth: 0 }
+  }
+
+  it('切换区间时期末资产必须变化（回归：旧实现分子恒为全区间终值）', () => {
+    const b10 = baseAtB(bPts, 120)
+    const b5 = baseAtB(bPts, 60)
+    const mFull = metricsForWindow(bPts, 0, 'full', 0)
+    const m10 = metricsForWindow(bPts, b10.invested, 'y10', b10.wealth)
+    const m5 = metricsForWindow(bPts, b5.invested, 'y5', b5.wealth)
+
+    expect(m10.endValue).not.toBeCloseTo(mFull.endValue, 6)
+    expect(m5.endValue).not.toBeCloseTo(m10.endValue, 6)
+    expect(m5.endValue).toBeLessThan(m10.endValue)
+    expect(m10.endValue).toBeLessThan(mFull.endValue)
+  })
+
+  it('累计投入随窗口缩短而递减（回归：旧实现用 sliced[0].wealth 当投入，导致窗口越短投入越大）', () => {
+    const b10 = baseAtB(bPts, 120)
+    const b5 = baseAtB(bPts, 60)
+    const mFull = metricsForWindow(bPts, 0, 'full', 0)
+    const m10 = metricsForWindow(bPts, b10.invested, 'y10', b10.wealth)
+    const m5 = metricsForWindow(bPts, b5.invested, 'y5', b5.wealth)
+
+    expect(m10.totalInvested).toBeLessThan(mFull.totalInvested)
+    expect(m5.totalInvested).toBeLessThan(m10.totalInvested)
+    expect(m10.totalInvested).toBeCloseTo(bPts[bPts.length - 1].invested - b10.invested, 6)
+  })
+
+  it('窗口内零新增投入时：投入为 0，但期末资产仍反映真实变化', () => {
+    // 后 60 个月完全不再加仓：invested 保持不变
+    const flat = bPts.map((p, i) => ({ ...p, invested: i < 140 ? p.invested : bPts[139].invested }))
+    const b5 = baseAtB(flat, 60)
+    const m5 = metricsForWindow(flat, b5.invested, 'y5', b5.wealth)
+
+    expect(m5.totalInvested).toBe(0)
+    // 资产仍在变（持仓增值/生息），不能被压成 0
+    expect(m5.endValue).toBeCloseTo(flat[flat.length - 1].wealth - b5.wealth, 6)
+    expect(m5.endValue).not.toBe(0)
+  })
+})
+
 // ---------------------------------------------------------------- h. 汇率方向
 
 describe('USD 标的汇率折算方向', () => {
