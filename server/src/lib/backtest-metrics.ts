@@ -177,18 +177,38 @@ export function sliceMonthly<T extends { date: string }>(monthly: T[], window: W
   return monthly.slice(monthly.length - nPts)
 }
 
-/** 窗口指标：investedAtWindowStart = 窗口首点前的累计 invested（窗口内投入 = 末 invested - 首 invested 前值） */
+/**
+ * 窗口指标（区间独立口径）。
+ *
+ * 把窗口首点视为“期初”：窗口之前的累计投入与当时已积累的 wealth 一并作为基准扣除，
+ * 只统计窗口内的投入与盈亏。因此：
+ *   窗口内投入   = 末 invested - 窗口前累计 invested
+ *   窗口期末资产 = 末 wealth    - 窗口前累计 wealth
+ *
+ * invested 与 wealth 必须同时平移。只平移 invested 会让期末资产保持全区间终值、
+ * 而累计投入被砍到窗口内，两者口径不一致，总收益率失真
+ * （切换区间时期末资产不变、收益率却跳变）。
+ *
+ * @param investedAtWindowStart 窗口首点之前的累计投入（全区间口径）
+ * @param wealthAtWindowStart   窗口首点之前的累计资产（全区间口径），取窗口首点前一个点的 wealth
+ */
 export function metricsForWindow(
   monthly: { date: string; invested: number; wealth: number }[],
   investedAtWindowStart: number,
-  window: WindowKey
+  window: WindowKey,
+  wealthAtWindowStart = 0
 ): CoreMetrics {
   const win = sliceMonthly(monthly, window)
   // 窗口内零投入（末累计投入未超过窗口前累计）→ 空指标
   if (win.length === 0 || win[win.length - 1].invested <= investedAtWindowStart) {
     return { totalInvested: 0, endValue: 0, totalReturnPct: 0, xirrPct: null, maxDrawdownPct: 0, maxDrawdownMonths: 0, annualizedVolPct: 0, sharpe: null, winRatePct: 0 }
   }
-  const shifted = win.map(p => ({ date: p.date, invested: p.invested - investedAtWindowStart, wealth: p.wealth }))
+  // invested 与 wealth 同步平移到窗口期初，保证两者口径一致
+  const shifted = win.map(p => ({
+    date: p.date,
+    invested: p.invested - investedAtWindowStart,
+    wealth: p.wealth - wealthAtWindowStart
+  }))
   return computeCoreMetrics(shifted, shifted[shifted.length - 1].invested)
 }
 

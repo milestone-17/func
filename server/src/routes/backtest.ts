@@ -137,11 +137,13 @@ export async function backtestRoutes(app: FastifyInstance): Promise<void> {
         })
         const nPts = WINDOW_POINTS[window]
         let investedAtStart = 0
+        let wealthAtStart = 0
         if (nPts !== null && result.monthly.length >= nPts) {
           const idx = result.monthly.length - nPts - 1
           investedAtStart = idx >= 0 ? result.monthly[idx].invested : 0
+          wealthAtStart = idx >= 0 ? result.monthly[idx].wealth : 0
         }
-        metrics = metricsForWindow(result.monthly, investedAtStart, window)
+        metrics = metricsForWindow(result.monthly, investedAtStart, window, wealthAtStart)
       } else {
         const result = runStrategyB({
           bars,

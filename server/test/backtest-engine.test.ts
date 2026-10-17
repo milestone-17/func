@@ -317,6 +317,64 @@ describe('sliceMonthly / metricsForWindow 窗口', () => {
   })
 })
 
+// ---------------------------------------------------------------- f2. 窗口期末资产口径回归
+
+describe('metricsForWindow 区间独立口径（期末资产与投入同步平移）', () => {
+  // 每月投 1000，资产每月增 1010（稳定盈利）；覆盖 full / y10 / y5 三窗口
+  const pts = Array.from({ length: 150 }, (_, i) => {
+    const y = 2013 + Math.floor(i / 12)
+    const m = String((i % 12) + 1).padStart(2, '0')
+    return { date: `${y}-${m}-28`, invested: (i + 1) * 1000, wealth: (i + 1) * 1010 }
+  })
+
+  /** 按调用方口径取窗口首点前一个点的累计值 */
+  function baseAt(points: { invested: number; wealth: number }[], nPts: number) {
+    const idx = points.length - nPts - 1
+    return idx >= 0
+      ? { invested: points[idx].invested, wealth: points[idx].wealth }
+      : { invested: 0, wealth: 0 }
+  }
+
+  it('切换区间时期末资产必须变化（回归：旧实现三窗口期末资产恒为全区间终值）', () => {
+    const b10 = baseAt(pts, 120)
+    const b5 = baseAt(pts, 60)
+
+    const mFull = metricsForWindow(pts, 0, 'full', 0)
+    const m10 = metricsForWindow(pts, b10.invested, 'y10', b10.wealth)
+    const m5 = metricsForWindow(pts, b5.invested, 'y5', b5.wealth)
+
+    // 三个窗口的期末资产互不相等（旧实现在这里会全部相等而失败）
+    expect(m10.endValue).not.toBeCloseTo(mFull.endValue, 6)
+    expect(m5.endValue).not.toBeCloseTo(m10.endValue, 6)
+    expect(m5.endValue).not.toBeCloseTo(mFull.endValue, 6)
+
+    // 且按窗口长度递减：y5 < y10 < full
+    expect(m5.endValue).toBeLessThan(m10.endValue)
+    expect(m10.endValue).toBeLessThan(mFull.endValue)
+  })
+
+  it('区间独立口径下 endValue 与 totalInvested 自洽', () => {
+    const b10 = baseAt(pts, 120)
+    const m10 = metricsForWindow(pts, b10.invested, 'y10', b10.wealth)
+
+    const expectedInvested = pts[pts.length - 1].invested - b10.invested
+    expect(m10.totalInvested).toBeCloseTo(expectedInvested, 6)
+    expect(m10.totalInvested).toBeGreaterThan(0)
+
+    const expectedEnd = pts[pts.length - 1].wealth - b10.wealth
+    expect(m10.endValue).toBeCloseTo(expectedEnd, 6)
+
+    expect(m10.totalReturnPct).toBeCloseTo((expectedEnd - expectedInvested) / expectedInvested * 100, 6)
+  })
+
+  it('未传 wealthAtWindowStart 时保持向后兼容（默认 0 = 旧语义）', () => {
+    const b10 = baseAt(pts, 120)
+    const legacy = metricsForWindow(pts, b10.invested, 'y10')
+    const explicit = metricsForWindow(pts, b10.invested, 'y10', 0)
+    expect(legacy.endValue).toBeCloseTo(explicit.endValue, 6)
+  })
+})
+
 // ---------------------------------------------------------------- h. 汇率方向
 
 describe('USD 标的汇率折算方向', () => {
