@@ -208,11 +208,13 @@ export async function runBacktestRefresh(): Promise<void> {
         for (const window of WINDOWS) {
           const nPts = WINDOW_POINTS[window]
           let investedAtStart = 0
+          let wealthAtStart = 0
           if (nPts !== null && resultA.monthly.length >= nPts) {
             const idx = resultA.monthly.length - nPts - 1
             investedAtStart = idx >= 0 ? resultA.monthly[idx].invested : 0
+            wealthAtStart = idx >= 0 ? resultA.monthly[idx].wealth : 0
           }
-          const winEntry: any = { metrics: roundMetrics(metricsForWindow(resultA.monthly, investedAtStart, window)) }
+          const winEntry: any = { metrics: roundMetrics(metricsForWindow(resultA.monthly, investedAtStart, window, wealthAtStart)) }
           if (fee === DEFAULT_FEE) {
             const winMonthly = sliceMonthly(resultA.monthly, window)
             if (winMonthly.length > 0) winEntry.yearly = buildYearly(winMonthly as any)
@@ -269,10 +271,23 @@ export async function runBacktestRefresh(): Promise<void> {
               sellTrimPct: 0.25, feeRate: fee, riskFreeAnnual: 0.02
             }
           })
+          // 与策略 A / 在线回测统一为“区间独立”口径
           for (const window of WINDOWS) {
-            const sliced = sliceMonthly(resultB.monthly, window)
+            const nPtsB = WINDOW_POINTS[window]
+            let investedAtStartB = 0
+            let wealthAtStartB = 0
+            if (nPtsB !== null && resultB.monthly.length >= nPtsB) {
+              const idx = resultB.monthly.length - nPtsB - 1
+              investedAtStartB = idx >= 0 ? resultB.monthly[idx].invested : 0
+              wealthAtStartB = idx >= 0 ? resultB.monthly[idx].wealth : 0
+            }
             windowsObj[window] = {
-              metrics: roundMetrics(computeCoreMetrics(sliced, window === 'full' ? 100000 : (sliced[0]?.wealth ?? 0)))
+              metrics: roundMetrics(metricsForWindow(
+                resultB.monthly.map(p => ({ date: p.date, invested: p.invested, wealth: p.wealth })),
+                investedAtStartB,
+                window,
+                wealthAtStartB
+              ))
             }
           }
         } else {
